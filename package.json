@@ -1,0 +1,14 @@
+﻿{
+  "name": "aman-cashier-license-server",
+  "version": "1.0.0",
+  "description": "AMAN Cashier Online License Management Server (Vercel Ready)",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js",
+    "dev": "node api/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}
