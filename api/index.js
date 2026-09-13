@@ -41,181 +41,270 @@ htCTVjaJmmDyDmodMGSlnw==
 -----END PRIVATE KEY-----`;
 }
 
-// In-memory cache + Global store
+// In-memory store
 let memoryStore = [];
+let auditStore = [];
 
-async function getLicensesList() {
-  if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
-    try {
-      const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/licenses?select=*`, {
-        headers: {
-          'apikey': process.env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`
-        }
-      });
-      if (res.ok) return await res.json();
-    } catch (e) {}
-  }
-  return memoryStore;
-}
-
-async function saveLicensesList(list) {
-  memoryStore = list;
-  if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
-    try {
-      await fetch(`${process.env.SUPABASE_URL}/rest/v1/licenses`, {
-        method: 'POST',
-        headers: {
-          'apikey': process.env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(list)
-      });
-    } catch (e) {}
-  }
-}
-
-function issueLicense(machineId, storeName, expiryDate = 'PERMANENT', phone = '', notes = '') {
+function signPayload(payload) {
   const privateKey = getPrivateKey();
-  const payload = {
-    machineId: machineId.trim().toUpperCase(),
-    storeName: storeName.trim(),
-    expiryDate,
-    issuedAt: new Date().toISOString(),
-  };
-
   const signer = crypto.createSign('sha256');
   signer.update(JSON.stringify(payload));
-  const signature = signer.sign(privateKey, 'hex');
-
-  const licenseObject = { data: payload, signature };
-  const newEntry = {
-    id: 'LIC-' + Date.now().toString(36).toUpperCase(),
-    machineId: payload.machineId,
-    storeName: payload.storeName,
-    expiryDate: payload.expiryDate,
-    issuedAt: payload.issuedAt,
-    phone: phone.trim(),
-    notes: notes.trim(),
-    licenseData: licenseObject,
-  };
-
-  return { newEntry, licenseObject, licenseString: JSON.stringify(licenseObject, null, 2) };
+  return signer.sign(privateKey, 'hex');
 }
 
-// Vercel Serverless Function Handler
+function logServerAudit(action, machineId, storeName, details, ip) {
+  const entry = {
+    id: 'AUD-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
+    timestamp: new Date().toISOString(),
+    action,
+    machineId,
+    storeName,
+    details,
+    ip: ip || 'unknown',
+  };
+  auditStore.unshift(entry);
+  if (auditStore.length > 200) auditStore.pop();
+}
+
 module.exports = async (req, res) => {
-  // Set CORS headers
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
-    res.statusCode = 204;
-    res.end();
-    return;
+    return res.status(200).end();
   }
 
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
+  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '';
 
-  // 1. GET /api/history
-  if (pathname === '/api/history' && req.method === 'GET') {
-    const list = await getLicensesList();
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(list));
-    return;
-  }
+  try {
+    // 1. GET /api/history
+    if (pathname === '/api/history' && req.method === 'GET') {
+      return res.status(200).json(memoryStore);
+    }
 
-  // 2. DELETE /api/history/:id
-  if (pathname.startsWith('/api/history/') && req.method === 'DELETE') {
-    const id = pathname.replace('/api/history/', '');
-    let list = await getLicensesList();
-    list = list.filter(item => item.id !== id && item.machineId !== id);
-    await saveLicensesList(list);
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ success: true }));
-    return;
-  }
+    // 2. GET /api/stats
+    if (pathname === '/api/stats' && req.method === 'GET') {
+      const total = memoryStore.length;
+      let active = 0;
+      let expired = 0;
+      let revoked = 0;
+      let trial = 0;
+      const now = Date.now();
 
-  // 3. POST /api/issue
-  if (pathname === '/api/issue' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', async () => {
-      try {
-        const { machineId, storeName, expiryDate, phone, notes } = JSON.parse(body || '{}');
-        if (!machineId || !storeName) {
-          res.statusCode = 400;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'برجاء إدخال كود الجهاز واسم المحل' }));
-          return;
-        }
-
-        const { newEntry, licenseString } = issueLicense(machineId, storeName, expiryDate, phone, notes);
-        const list = await getLicensesList();
-        const existingIdx = list.findIndex(h => h.machineId === newEntry.machineId);
-        if (existingIdx >= 0) {
-          list[existingIdx] = newEntry;
+      memoryStore.forEach(item => {
+        if (item.status === 'REVOKED') {
+          revoked++;
+        } else if (item.expiryDate === 'PERMANENT') {
+          active++;
         } else {
-          list.unshift(newEntry);
+          const exp = new Date(item.expiryDate).getTime();
+          if (exp < now) {
+            expired++;
+          } else {
+            active++;
+            trial++;
+          }
         }
+      });
 
-        await saveLicensesList(list);
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ success: true, entry: newEntry, licenseJson: licenseString }));
-      } catch (err) {
-        res.statusCode = 500;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: err.message }));
+      return res.status(200).json({ total, active, expired, revoked, trial });
+    }
+
+    // 3. GET /api/audit-logs
+    if (pathname === '/api/audit-logs' && req.method === 'GET') {
+      return res.status(200).json(auditStore);
+    }
+
+    // 4. GET /api/check-license?machineId=XXX
+    if (pathname === '/api/check-license' && req.method === 'GET') {
+      const machineId = (url.searchParams.get('machineId') || '').trim().toUpperCase();
+      if (!machineId) {
+        return res.status(400).json({ found: false, error: 'machineId required' });
       }
-    });
-    return;
-  }
 
-  // 4. GET /api/check-license
-  if (pathname === '/api/check-license') {
-    const machineId = url.searchParams.get('machineId');
-    const list = await getLicensesList();
-    const item = list.find(h => h.machineId && machineId && h.machineId.toUpperCase() === machineId.toUpperCase());
+      const entry = memoryStore.find(e => e.machineId.toUpperCase() === machineId);
+      if (!entry) {
+        return res.status(404).json({ found: false, error: 'الترخيص غير موجود أو تم حذفه من السيرفر' });
+      }
 
-    if (!item || !item.licenseData) {
-      res.statusCode = 404;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ found: false, error: 'الترخيص غير موجود أو تم حذفه من السيرفر' }));
+      if (entry.status === 'REVOKED') {
+        return res.status(200).json({
+          found: true,
+          revoked: true,
+          status: 'REVOKED',
+          message: 'تم إلغاء ترخيص هذا الجهاز'
+        });
+      }
+
+      entry.lastCheckAt = new Date().toISOString();
+      entry.lastIp = ip;
+
+      return res.status(200).json({
+        found: true,
+        licenseData: entry.licenseData,
+        storeName: entry.storeName,
+        expiryDate: entry.expiryDate,
+        status: entry.status || 'ACTIVE'
+      });
+    }
+
+    // 5. POST /api/issue
+    if (pathname === '/api/issue' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const { machineId, storeName, expiryDate, phone, notes, licenseType } = JSON.parse(body);
+          if (!machineId || !storeName) {
+            return res.status(400).json({ success: false, error: 'machineId and storeName are required' });
+          }
+
+          const cleanMachineId = machineId.trim().toUpperCase();
+          const cleanStoreName = storeName.trim();
+          const cleanExpiry = expiryDate || 'PERMANENT';
+
+          const payload = {
+            machineId: cleanMachineId,
+            storeName: cleanStoreName,
+            expiryDate: cleanExpiry,
+            licenseType: licenseType || 'CUSTOM',
+            issuedAt: new Date().toISOString(),
+          };
+
+          const signature = signPayload(payload);
+          const licenseObject = { data: payload, signature };
+
+          // فحص هل الجهاز مسجل مسبقاً -> تحديث
+          const existingIdx = memoryStore.findIndex(e => e.machineId === cleanMachineId);
+          const entry = {
+            id: 'LIC-' + Date.now().toString(36).toUpperCase(),
+            machineId: cleanMachineId,
+            storeName: cleanStoreName,
+            expiryDate: cleanExpiry,
+            licenseType: payload.licenseType,
+            issuedAt: payload.issuedAt,
+            phone: (phone || '').trim(),
+            notes: (notes || '').trim(),
+            status: 'ACTIVE',
+            licenseData: licenseObject,
+          };
+
+          if (existingIdx >= 0) {
+            memoryStore[existingIdx] = entry;
+          } else {
+            memoryStore.unshift(entry);
+          }
+
+          logServerAudit('ISSUE_LICENSE', cleanMachineId, cleanStoreName, `توليد ترخيص جديد (${cleanExpiry})`, ip);
+
+          return res.status(200).json({
+            success: true,
+            entry,
+            licenseJson: JSON.stringify(licenseObject, null, 2)
+          });
+        } catch (e) {
+          return res.status(500).json({ success: false, error: e.message });
+        }
+      });
       return;
     }
 
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      found: true,
-      licenseData: item.licenseData,
-      storeName: item.storeName,
-      expiryDate: item.expiryDate
-    }));
-    return;
-  }
+    // 6. POST /api/extend
+    if (pathname === '/api/extend' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { id, addHours, addDays } = JSON.parse(body);
+          const entry = memoryStore.find(e => e.id === id);
+          if (!entry) return res.status(404).json({ success: false, error: 'License not found' });
 
-  // 5. GET /api/download
-  if (pathname === '/api/download') {
-    const machineId = url.searchParams.get('machineId');
-    const list = await getLicensesList();
-    const item = list.find(h => h.machineId === machineId);
+          let baseDate = new Date();
+          if (entry.expiryDate !== 'PERMANENT') {
+            const curExp = new Date(entry.expiryDate);
+            if (curExp.getTime() > Date.now()) {
+              baseDate = curExp;
+            }
+          }
 
-    if (!item) {
-      res.statusCode = 404;
-      res.end('الترخيص غير موجود');
+          if (addHours) baseDate.setHours(baseDate.getHours() + Number(addHours));
+          if (addDays) baseDate.setDate(baseDate.getDate() + Number(addDays));
+
+          entry.expiryDate = baseDate.toISOString();
+          entry.status = 'ACTIVE';
+          entry.licenseData.data.expiryDate = entry.expiryDate;
+          entry.licenseData.signature = signPayload(entry.licenseData.data);
+
+          logServerAudit('EXTEND_LICENSE', entry.machineId, entry.storeName, `تمديد الصلاحية حتى ${entry.expiryDate}`, ip);
+
+          return res.status(200).json({ success: true, entry });
+        } catch (e) {
+          return res.status(500).json({ success: false, error: e.message });
+        }
+      });
       return;
     }
 
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', 'attachment; filename="license.key"');
-    res.end(JSON.stringify(item.licenseData, null, 2));
-    return;
-  }
+    // 7. POST /api/revoke
+    if (pathname === '/api/revoke' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { id } = JSON.parse(body);
+          const entry = memoryStore.find(e => e.id === id);
+          if (!entry) return res.status(404).json({ success: false, error: 'License not found' });
 
-  res.statusCode = 404;
-  res.end('Not Found');
+          entry.status = 'REVOKED';
+          logServerAudit('REVOKE_LICENSE', entry.machineId, entry.storeName, 'إلغاء الترخيص', ip);
+
+          return res.status(200).json({ success: true, entry });
+        } catch (e) {
+          return res.status(500).json({ success: false, error: e.message });
+        }
+      });
+      return;
+    }
+
+    // 8. POST /api/reactivate
+    if (pathname === '/api/reactivate' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { id } = JSON.parse(body);
+          const entry = memoryStore.find(e => e.id === id);
+          if (!entry) return res.status(404).json({ success: false, error: 'License not found' });
+
+          entry.status = 'ACTIVE';
+          logServerAudit('REACTIVATE_LICENSE', entry.machineId, entry.storeName, 'إعادة تفعيل الترخيص', ip);
+
+          return res.status(200).json({ success: true, entry });
+        } catch (e) {
+          return res.status(500).json({ success: false, error: e.message });
+        }
+      });
+      return;
+    }
+
+    // 9. DELETE /api/delete/:id
+    if (pathname.startsWith('/api/delete/')) {
+      const id = pathname.replace('/api/delete/', '');
+      const idx = memoryStore.findIndex(e => e.id === id);
+      if (idx >= 0) {
+        const removed = memoryStore.splice(idx, 1)[0];
+        logServerAudit('DELETE_LICENSE', removed.machineId, removed.storeName, 'حذف الترخيص نهائياً', ip);
+        return res.status(200).json({ success: true });
+      }
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+
+    return res.status(404).json({ error: 'Endpoint not found' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 };
