@@ -230,6 +230,46 @@
       </div>
     </div>
 
+    <!-- Login / Token Input Modal (If no token is present) -->
+    <div id="loginScreen" class="hidden fixed inset-0 z-50 bg-[#0b0f17] p-5 flex flex-col justify-center items-center">
+      <div class="w-full max-w-sm bg-[#111827] border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-5 text-center">
+        
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-600 mx-auto flex items-center justify-center text-3xl shadow-lg shadow-cyan-500/20 border border-cyan-400/40">
+          🛡️
+        </div>
+
+        <div>
+          <h2 class="text-lg font-black text-white">أمان كاشير — المتابعة السحابية</h2>
+          <p class="text-xs text-slate-400 mt-1">متابعة مبيعات ومخزون محلك لحظياً من أي مكان</p>
+        </div>
+
+        <form id="tokenLoginForm" onsubmit="handleTokenSubmit(event)" class="space-y-3.5 text-right">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 mb-1.5">كود ربط المحل (Store Code):</label>
+            <input
+              type="text"
+              id="manualTokenInput"
+              required
+              placeholder="مثال: PAIR_QU1B-TI1G-QUNC"
+              class="w-full bg-[#1e293b] border border-slate-600 rounded-xl px-4 py-3 text-xs font-mono text-cyan-300 placeholder-slate-500 uppercase tracking-wider focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 transition active:scale-95"
+          >
+            دخول إلى لوحة المتابعة 🚀
+          </button>
+        </form>
+
+        <div class="text-[11px] text-slate-500 bg-slate-900/80 rounded-xl p-3 border border-slate-800 text-right leading-relaxed">
+          💡 <strong>كيف أحصل على الكود؟</strong><br>
+          افتح برنامج <strong>أمان كاشير</strong> على الكمبيوتر واضغط على زر <strong>"ربط الموبايل بالمحل"</strong> في شاشة البيع لنسخ الكود أو مسح رمز QR.
+        </div>
+      </div>
+    </div>
+
     <!-- TAB 4: SYSTEM INFO & DEVICE (حالة الجهاز والنظام) -->
     <div id="tab-system" class="tab-content hidden space-y-3">
       <div class="bg-[#161e2e] border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
@@ -248,6 +288,10 @@
             <span id="sysMachineId" class="font-mono text-cyan-400 font-bold">AMAN-UNKNOWN</span>
           </div>
           <div class="flex justify-between py-1 border-b border-slate-800/60">
+            <span class="text-slate-400">رمز الربط الحالي:</span>
+            <span id="sysStoreToken" class="font-mono text-cyan-300 font-bold">—</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-slate-800/60">
             <span class="text-slate-400">توقيت السيرفر السحابي:</span>
             <span id="sysServerTime" class="font-mono text-slate-300">—</span>
           </div>
@@ -259,6 +303,16 @@
             <span class="text-slate-400">صلاحيات هذا الرابط:</span>
             <span class="font-bold text-amber-400 bg-amber-950/60 border border-amber-800/40 px-2 py-0.5 rounded text-[11px]">عرض وقراءة فقط (Read-Only)</span>
           </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-800">
+          <button
+            onclick="switchStoreOrLogout()"
+            class="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-rose-950 hover:text-rose-400 border border-slate-700 hover:border-rose-800 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition"
+          >
+            <span>🚪</span>
+            <span>تبديل المتجر / تسجيل خروج</span>
+          </button>
         </div>
       </div>
     </div>
@@ -293,9 +347,49 @@
   </nav>
 
   <script>
+    const STORAGE_KEY = 'aman_mobile_token';
     const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
+    let token = urlParams.get('token') || localStorage.getItem(STORAGE_KEY) || '';
     let activeTab = 'overview';
+
+    // If token found in URL, persist it
+    if (urlParams.get('token')) {
+      localStorage.setItem(STORAGE_KEY, urlParams.get('token'));
+    }
+
+    function checkAuth() {
+      const loginScreen = document.getElementById('loginScreen');
+      if (!token || token.trim() === '') {
+        loginScreen.classList.remove('hidden');
+      } else {
+        loginScreen.classList.add('hidden');
+        document.getElementById('sysStoreToken').textContent = token;
+        fetchLiveSnapshot();
+      }
+    }
+
+    function handleTokenSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('manualTokenInput').value.trim().toUpperCase();
+      if (!input) return;
+      token = input;
+      localStorage.setItem(STORAGE_KEY, token);
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set('token', token);
+      window.history.replaceState({}, '', newUrl.toString());
+      checkAuth();
+    }
+
+    function switchStoreOrLogout() {
+      if (confirm('هل ترغب في تسجيل الخروج من هذا المتجر؟')) {
+        localStorage.removeItem(STORAGE_KEY);
+        token = '';
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('token');
+        window.history.replaceState({}, '', newUrl.pathname);
+        checkAuth();
+      }
+    }
 
     function switchTab(tabId) {
       activeTab = tabId;
@@ -320,10 +414,7 @@
 
     async function fetchLiveSnapshot(isManual = false) {
       if (!token) {
-        document.getElementById('tokenWarning').classList.remove('hidden');
-        document.getElementById('syncStatusText').textContent = 'رمز مفقود';
-        document.getElementById('syncStatusText').className = 'text-[11px] text-rose-400 font-bold';
-        document.getElementById('syncDot').className = 'w-2 h-2 rounded-full bg-rose-500';
+        checkAuth();
         return;
       }
 
@@ -332,19 +423,22 @@
 
       try {
         const res = await fetch(`/api/cloud/data?token=${encodeURIComponent(token)}`);
-        if (!res.ok) throw new Error('Failed to fetch snapshot');
         const json = await res.json();
 
-        if (json.success && json.data) {
+        if (res.ok && json.success && json.data) {
           renderDashboard(json.data);
           document.getElementById('syncStatusText').textContent = 'متصل بالسحابة';
           document.getElementById('syncStatusText').className = 'text-[11px] text-emerald-400 font-bold';
           document.getElementById('syncDot').className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        } else {
+          document.getElementById('syncStatusText').textContent = 'بانتظار مزامنة الكاشير';
+          document.getElementById('syncStatusText').className = 'text-[11px] text-amber-400 font-bold';
+          document.getElementById('syncDot').className = 'w-2 h-2 rounded-full bg-amber-400';
         }
       } catch (err) {
-        document.getElementById('syncStatusText').textContent = 'تعذر التحديث';
-        document.getElementById('syncStatusText').className = 'text-[11px] text-amber-400 font-bold';
-        document.getElementById('syncDot').className = 'w-2 h-2 rounded-full bg-amber-400';
+        document.getElementById('syncStatusText').textContent = 'تعذر الاتصال';
+        document.getElementById('syncStatusText').className = 'text-[11px] text-rose-400 font-bold';
+        document.getElementById('syncDot').className = 'w-2 h-2 rounded-full bg-rose-400';
       } finally {
         if (refreshIcon) refreshIcon.classList.remove('animate-spin');
       }
@@ -359,6 +453,7 @@
       document.getElementById('deviceMachineBadge').textContent = machineId;
       document.getElementById('sysStoreName').textContent = storeName;
       document.getElementById('sysMachineId').textContent = machineId;
+      document.getElementById('sysStoreToken').textContent = token;
 
       const lastSyncDate = data.lastSync ? new Date(data.lastSync) : new Date();
       document.getElementById('lastSyncTimeText').textContent = lastSyncDate.toLocaleTimeString('ar-EG');
@@ -450,10 +545,11 @@
       }
     }
 
+    // Initialize
+    checkAuth();
     // Auto-Polling every 8 seconds
-    fetchLiveSnapshot();
     setInterval(() => {
-      fetchLiveSnapshot();
+      if (token) fetchLiveSnapshot();
     }, 8000);
   </script>
 </body>
