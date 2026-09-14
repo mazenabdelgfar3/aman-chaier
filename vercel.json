@@ -6,12 +6,8 @@
       "destination": "/api/index.js"
     },
     {
-      "source": "/aman_logo.jpg",
-      "destination": "/public/aman_logo.jpg"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/public/index.html"
+      "source": "/mobile",
+      "destination": "/mobile.html"
     }
   ]
 }

@@ -1,4 +1,4 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -44,6 +44,7 @@ htCTVjaJmmDyDmodMGSlnw==
 // In-memory store
 let memoryStore = [];
 let auditStore = [];
+let cloudSnapshots = new Map();
 
 function signPayload(payload) {
   const privateKey = getPrivateKey();
@@ -301,6 +302,99 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true });
       }
       return res.status(404).json({ success: false, error: 'Not found' });
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // ☁️ CLOUD LIVE MONITORING (Read-Only Mobile Portal APIs)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // 10. POST /api/cloud/sync (Desktop Push Telemetry)
+    if (pathname === '/api/cloud/sync' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { token, machineId, storeName, snapshot } = JSON.parse(body);
+          if (!token) {
+            return res.status(400).json({ success: false, error: 'Token is required' });
+          }
+
+          const existing = cloudSnapshots.get(token) || {};
+          const record = {
+            token,
+            machineId: machineId || existing.machineId || 'AMAN-UNKNOWN',
+            storeName: storeName || existing.storeName || 'أمان كاشير',
+            snapshot: snapshot || existing.snapshot || {},
+            lastSync: new Date().toISOString(),
+            lastIp: ip,
+          };
+
+          cloudSnapshots.set(token, record);
+          return res.status(200).json({ success: true, serverTime: new Date().toISOString() });
+        } catch (err) {
+          return res.status(500).json({ success: false, error: err.message });
+        }
+      });
+      return;
+    }
+
+    // 11. GET /api/cloud/data?token=XXX (Mobile Read-Only Pull)
+    if (pathname === '/api/cloud/data' && req.method === 'GET') {
+      const token = (url.searchParams.get('token') || '').trim();
+      if (!token) {
+        return res.status(400).json({ success: false, error: 'token parameter is required' });
+      }
+
+      const storeData = cloudSnapshots.get(token);
+      if (!storeData) {
+        return res.status(404).json({
+          success: false,
+          error: 'لم يتم العثور على بيانات لهذا الرمز. تأكد من أن جهاز الكاشير متصل وقام بالمزامنة أولاً.'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        readOnly: true,
+        data: storeData,
+        serverTime: new Date().toISOString()
+      });
+    }
+
+    // 12. POST /api/cloud/pair (Validate or initialize token)
+    if (pathname === '/api/cloud/pair' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { token, storeName, machineId } = JSON.parse(body);
+          if (!token) {
+            return res.status(400).json({ success: false, error: 'Token is required' });
+          }
+
+          if (!cloudSnapshots.has(token)) {
+            cloudSnapshots.set(token, {
+              token,
+              machineId: machineId || '',
+              storeName: storeName || 'أمان كاشير',
+              snapshot: {
+                salesSummary: { todayTotalCents: 0, todayInvoiceCount: 0, averageInvoiceCents: 0 },
+                recentInvoices: [],
+                lowStockProducts: [],
+                activeShift: null,
+                paymentBreakdown: { cashCents: 0, cardCents: 0, creditCents: 0 }
+              },
+              lastSync: new Date().toISOString(),
+              lastIp: ip,
+            });
+          }
+
+          return res.status(200).json({ success: true, token, storeName });
+        } catch (err) {
+          return res.status(500).json({ success: false, error: err.message });
+        }
+      });
+      return;
     }
 
     return res.status(404).json({ error: 'Endpoint not found' });
