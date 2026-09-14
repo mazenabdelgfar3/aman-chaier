@@ -547,10 +547,10 @@
 
     // Initialize
     checkAuth();
-    // Auto-Polling every 8 seconds
+    // Auto-Polling every 3 seconds for continuous real-time sync
     setInterval(() => {
       if (token) fetchLiveSnapshot();
-    }, 8000);
+    }, 3000);
   </script>
 </body>
 </html>
