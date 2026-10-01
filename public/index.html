@@ -265,6 +265,33 @@
   <script>
     let currentSelectedDuration = 'PERMANENT';
 
+    // تعقيم النصوص القادمة من أجهزة POS قبل إدراجها في HTML (منع XSS مخزّن)
+    function esc(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // طلب إدارة مع مفتاح ADMIN_API_KEY (يُطلب من المستخدم عند رفض الخادم بـ 401)
+    async function adminFetch(url, options) {
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, (options && options.headers) || {});
+      const key = sessionStorage.getItem('aman_admin_key');
+      if (key) headers['x-admin-key'] = key;
+      let res = await fetch(url, Object.assign({}, options, { headers }));
+      if (res.status === 401) {
+        const newKey = prompt('خادم الترخيص يطلب مفتاح الإدارة (ADMIN_API_KEY):');
+        if (newKey) {
+          sessionStorage.setItem('aman_admin_key', newKey.trim());
+          headers['x-admin-key'] = newKey.trim();
+          res = await fetch(url, Object.assign({}, options, { headers }));
+        }
+      }
+      return res;
+    }
+
     function setDuration(duration) {
       currentSelectedDuration = duration;
       document.querySelectorAll('.duration-btn').forEach(btn => {
@@ -314,7 +341,7 @@
         const notes = document.getElementById('notesInput').value;
         const expiryDate = calculateExpiry(currentSelectedDuration);
 
-        const res = await fetch('/api/issue', {
+        const res = await adminFetch('/api/issue', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -394,23 +421,23 @@
 
         return `
           <tr class="hover:bg-gray-800/40 transition-colors">
-            <td class="py-2.5 px-3 font-bold text-white">${item.storeName}</td>
-            <td class="py-2.5 px-3 font-mono text-cyan-300 text-[11px]">${item.machineId}</td>
+            <td class="py-2.5 px-3 font-bold text-white">${esc(item.storeName)}</td>
+            <td class="py-2.5 px-3 font-mono text-cyan-300 text-[11px]">${esc(item.machineId)}</td>
             <td class="py-2.5 px-3">${badge}</td>
-            <td class="py-2.5 px-3 font-semibold ${isRevoked ? 'text-rose-400' : 'text-emerald-400'}">${item.status || 'ACTIVE'}</td>
+            <td class="py-2.5 px-3 font-semibold ${isRevoked ? 'text-rose-400' : 'text-emerald-400'}">${esc(item.status || 'ACTIVE')}</td>
             <td class="py-2.5 px-3 text-center">
               <div class="flex items-center justify-center gap-1.5">
-                <button onclick="extendLicense('${item.id}', 24)" title="تمديد 24 ساعة" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-cyan-300 rounded border border-gray-700 text-[10px]">
+                <button onclick="extendLicense('${esc(item.id)}', 24)" title="تمديد 24 ساعة" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-cyan-300 rounded border border-gray-700 text-[10px]">
                   +24س
                 </button>
-                <button onclick="extendLicense('${item.id}', 168)" title="تمديد 7 أيام" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-cyan-300 rounded border border-gray-700 text-[10px]">
+                <button onclick="extendLicense('${esc(item.id)}', 168)" title="تمديد 7 أيام" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-cyan-300 rounded border border-gray-700 text-[10px]">
                   +7ي
                 </button>
                 ${isRevoked 
-                  ? `<button onclick="reactivateLicense('${item.id}')" title="إعادة تفعيل" class="px-2 py-1 bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded border border-emerald-800 text-[10px]"><i class="fa-solid fa-play"></i> تفعيل</button>`
-                  : `<button onclick="revokeLicense('${item.id}')" title="إلغاء الترخيص" class="px-2 py-1 bg-rose-950 hover:bg-rose-900 text-rose-300 rounded border border-rose-800 text-[10px]"><i class="fa-solid fa-ban"></i> إيقاف</button>`
+                  ? `<button onclick="reactivateLicense('${esc(item.id)}')" title="إعادة تفعيل" class="px-2 py-1 bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded border border-emerald-800 text-[10px]"><i class="fa-solid fa-play"></i> تفعيل</button>`
+                  : `<button onclick="revokeLicense('${esc(item.id)}')" title="إلغاء الترخيص" class="px-2 py-1 bg-rose-950 hover:bg-rose-900 text-rose-300 rounded border border-rose-800 text-[10px]"><i class="fa-solid fa-ban"></i> إيقاف</button>`
                 }
-                <button onclick="deleteLicense('${item.id}')" title="حذف نهائي" class="px-2 py-1 bg-gray-800 hover:bg-rose-900/60 text-gray-400 hover:text-rose-300 rounded border border-gray-700 text-[10px]">
+                <button onclick="deleteLicense('${esc(item.id)}')" title="حذف نهائي" class="px-2 py-1 bg-gray-800 hover:bg-rose-900/60 text-gray-400 hover:text-rose-300 rounded border border-gray-700 text-[10px]">
                   <i class="fa-solid fa-trash"></i>
                 </button>
               </div>
@@ -422,7 +449,7 @@
 
     async function extendLicense(id, hours) {
       if (!confirm(`هل ترغب في تمديد صلاحية هذا الترخيص بـ ${hours} ساعة؟`)) return;
-      await fetch('/api/extend', {
+      await adminFetch('/api/extend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, addHours: hours })
@@ -432,7 +459,7 @@
 
     async function revokeLicense(id) {
       if (!confirm('هل أنت متأكد من رغبتك في إيقاف وإلغاء ترخيص هذا الجهاز؟')) return;
-      await fetch('/api/revoke', {
+      await adminFetch('/api/revoke', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
@@ -441,7 +468,7 @@
     }
 
     async function reactivateLicense(id) {
-      await fetch('/api/reactivate', {
+      await adminFetch('/api/reactivate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
@@ -451,7 +478,7 @@
 
     async function deleteLicense(id) {
       if (!confirm('هل تريد حذف هذا الترخيص نهائياً من السيرفر؟')) return;
-      await fetch(`/api/delete/${id}`, { method: 'DELETE' });
+      await adminFetch(`/api/delete/${id}`, { method: 'DELETE' });
       loadHistory();
     }
 
@@ -465,9 +492,9 @@
         container.innerHTML = logs.map(l => `
           <div class="bg-gray-950 p-2.5 rounded-lg border border-gray-800 flex items-start justify-between">
             <div>
-              <span class="font-bold text-cyan-300 font-mono text-[11px]">${l.action}</span>
-              <span class="text-gray-300 mx-2">${l.details || ''}</span>
-              <div class="text-[10px] text-gray-500 font-mono mt-1">${l.machineId} | ${l.storeName || ''}</div>
+              <span class="font-bold text-cyan-300 font-mono text-[11px]">${esc(l.action)}</span>
+              <span class="text-gray-300 mx-2">${esc(l.details)}</span>
+              <div class="text-[10px] text-gray-500 font-mono mt-1">${esc(l.machineId)} | ${esc(l.storeName)}</div>
             </div>
             <div class="text-[10px] text-gray-500">${new Date(l.timestamp).toLocaleTimeString('ar-EG')}</div>
           </div>

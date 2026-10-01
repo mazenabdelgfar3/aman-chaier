@@ -43,7 +43,7 @@
         </div>
       </div>
 
-      <button id="btnRefresh" onclick="fetchLiveSnapshot(true)" class="bg-slate-800 hover:bg-slate-700 active:scale-95 transition text-cyan-400 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold flex items-center gap-1">
+      <button id="btnRefresh" onclick="loadData(true)" class="bg-slate-800 hover:bg-slate-700 active:scale-95 transition text-cyan-400 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold flex items-center gap-1">
         <svg id="refreshIcon" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
@@ -78,138 +78,131 @@
     <!-- TAB 1: OVERVIEW & SALES (نظرة عامة ومبيعات اليوم) -->
     <div id="tab-overview" class="tab-content space-y-3.5">
       
-      <!-- Key KPI Cards (2x2 Grid) -->
-      <div class="grid grid-cols-2 gap-2.5">
-        <!-- Sales Total -->
-        <div class="bg-[#161e2e] border border-slate-800 rounded-2xl p-3.5 shadow-sm">
-          <div class="text-[11px] text-slate-400 font-bold mb-1 flex items-center justify-between">
-            <span>مبيعات اليوم</span>
-            <span class="text-base">💰</span>
-          </div>
-          <div class="flex items-baseline gap-1">
-            <span id="statTodaySales" class="text-xl font-black text-emerald-400 font-mono">0.00</span>
-            <span class="text-[10px] text-slate-400 font-bold">ج.م</span>
-          </div>
-          <div id="statGrowth" class="text-[10px] text-slate-500 mt-1">سجل المبيعات الحية اليومية</div>
+      <!-- 1. كروت الإحصائيات العلوية (شبكة 2x2) -->
+      <div class="grid grid-cols-2 gap-3">
+        <!-- إجمالي المبيعات المحققة -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center shadow-sm">
+          <div class="text-xs text-slate-400 font-bold">إجمالي المبيعات المحققة</div>
+          <div class="text-xl font-black text-emerald-400 mt-1 font-mono" id="total-sales">0.00 <span class="text-xs font-sans">ج.م</span></div>
+          <div class="text-[10px] text-slate-500 mt-1">متوسط الفاتورة: <span id="avg-ticket" class="font-mono font-bold">0.00</span> ج.م</div>
         </div>
 
-        <!-- Invoices Count -->
-        <div class="bg-[#161e2e] border border-slate-800 rounded-2xl p-3.5 shadow-sm">
-          <div class="text-[11px] text-slate-400 font-bold mb-1 flex items-center justify-between">
-            <span>عدد الفواتير</span>
-            <span class="text-base">🧾</span>
-          </div>
-          <div class="flex items-baseline gap-1">
-            <span id="statTodayInvoices" class="text-xl font-black text-cyan-400 font-mono">0</span>
-            <span class="text-[10px] text-slate-400 font-bold">فاتورة</span>
-          </div>
-          <div class="text-[10px] text-slate-500 mt-1">معدل الفواتير الصادرة</div>
+        <!-- عدد الفواتير الصادرة -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center shadow-sm">
+          <div class="text-xs text-slate-400 font-bold">عدد الفواتير الصادرة</div>
+          <div class="text-xl font-black text-sky-400 mt-1 font-mono" id="invoices-count">0</div>
+          <div class="text-[10px] text-slate-500 mt-1">فاتورة اليوم</div>
         </div>
 
-        <!-- Average Ticket -->
-        <div class="bg-[#161e2e] border border-slate-800 rounded-2xl p-3.5 shadow-sm">
-          <div class="text-[11px] text-slate-400 font-bold mb-1 flex items-center justify-between">
-            <span>متوسط الفاتورة</span>
-            <span class="text-base">📊</span>
-          </div>
-          <div class="flex items-baseline gap-1">
-            <span id="statAvgInvoice" class="text-lg font-black text-blue-400 font-mono">0.00</span>
-            <span class="text-[10px] text-slate-400 font-bold">ج.م</span>
-          </div>
-          <div class="text-[10px] text-slate-500 mt-1">قيمة المشتريات / عميل</div>
+        <!-- صافي الربح التقديري -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center shadow-sm">
+          <div class="text-xs text-slate-400 font-bold">صافي الربح التقديري</div>
+          <div class="text-xl font-black text-teal-400 mt-1 font-mono" id="net-profit">0.00 <span class="text-xs font-sans">ج.م</span></div>
+          <div class="text-[10px] text-emerald-400 mt-1 font-bold">هامش ربح: <span id="profit-margin" class="font-mono">0.0%</span></div>
         </div>
 
-        <!-- Low Stock Count -->
-        <div class="bg-[#161e2e] border border-slate-800 rounded-2xl p-3.5 shadow-sm">
-          <div class="text-[11px] text-slate-400 font-bold mb-1 flex items-center justify-between">
-            <span>نواقص المخزون</span>
-            <span class="text-base">⚠️</span>
-          </div>
-          <div class="flex items-baseline gap-1">
-            <span id="statLowStockCount" class="text-lg font-black text-rose-400 font-mono">0</span>
-            <span class="text-[10px] text-slate-400 font-bold">صنف بحاجة للطلب</span>
-          </div>
-          <div class="text-[10px] text-slate-500 mt-1">تنبيهات المخزون الحرج</div>
+        <!-- نواقص المخزون -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center shadow-sm">
+          <div class="text-xs text-slate-400 font-bold">نواقص المخزون</div>
+          <div class="text-xl font-black text-amber-400 mt-1 font-mono" id="low-stock">0</div>
+          <div class="text-[10px] text-slate-500 mt-1">أصناف بحاجة للطلب</div>
         </div>
       </div>
 
-      <!-- Payment Breakdown Card -->
-      <div class="bg-[#161e2e] border border-slate-800 rounded-2xl p-4 shadow-sm">
-        <h2 class="text-xs font-bold text-slate-300 mb-3 flex items-center gap-1.5">
-          <span>💳</span>
-          <span>توزيع طرق الدفع اليوم</span>
-        </h2>
-        <div class="space-y-2.5 text-xs font-semibold">
-          <!-- Cash -->
-          <div class="flex items-center justify-between bg-[#111827] p-2.5 rounded-xl border border-slate-800/80">
-            <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-              <span class="text-slate-300">نقدي (Cash)</span>
-            </div>
-            <span id="payCash" class="font-mono text-emerald-400 font-bold">0.00 ج.م</span>
+      <!-- 2. تفاصيل طرق الدفع (نفس تقسيمة الديسكتوب الأربعة) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="text-sm font-extrabold text-slate-200 mb-3 border-b border-slate-800 pb-2 flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <span>💳</span>
+            <span>توزيع النقدية وطرق الدفع</span>
           </div>
-          <!-- Card / Visa -->
-          <div class="flex items-center justify-between bg-[#111827] p-2.5 rounded-xl border border-slate-800/80">
-            <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
-              <span class="text-slate-300">فيزا / بطاقات</span>
-            </div>
-            <span id="payCard" class="font-mono text-cyan-400 font-bold">0.00 ج.م</span>
-          </div>
-          <!-- Credit -->
-          <div class="flex items-center justify-between bg-[#111827] p-2.5 rounded-xl border border-slate-800/80">
-            <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-              <span class="text-slate-300">آجل (Credit)</span>
-            </div>
-            <span id="payCredit" class="font-mono text-amber-400 font-bold">0.00 ج.م</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Active Shift Card -->
-      <div class="bg-[#161e2e] border border-slate-800 rounded-2xl p-4 shadow-sm">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-            <span>👤</span>
-            <span>الوردية النشطة حالياً</span>
-          </h2>
-          <span id="shiftStatusBadge" class="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-            مفتوحة الآن
-          </span>
+          <span class="text-[10px] text-slate-500 font-normal">معتمدة لليوم</span>
         </div>
         <div class="grid grid-cols-2 gap-2 text-xs">
-          <div class="bg-[#111827] p-2.5 rounded-xl border border-slate-800">
-            <span class="text-[10px] text-slate-500 block">اسم الكاشير:</span>
-            <span id="shiftCashierName" class="font-bold text-slate-200">الرئيسي</span>
+          <div class="flex justify-between items-center bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/40">
+            <span class="text-slate-400 font-medium">💵 كاش (نقدي):</span>
+            <span class="font-bold font-mono text-emerald-400" id="pay-cash">0.00 ج.م</span>
           </div>
-          <div class="bg-[#111827] p-2.5 rounded-xl border border-slate-800">
-            <span class="text-[10px] text-slate-500 block">رقم الوردية:</span>
-            <span id="shiftNumberText" class="font-mono font-bold text-cyan-400">#01</span>
+          <div class="flex justify-between items-center bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/40">
+            <span class="text-slate-400 font-medium">💳 فيزا / بطاقات:</span>
+            <span class="font-bold font-mono text-cyan-400" id="pay-card">0.00 ج.م</span>
           </div>
-          <div class="bg-[#111827] p-2.5 rounded-xl border border-slate-800">
-            <span class="text-[10px] text-slate-500 block">نقدية البداية:</span>
-            <span id="shiftOpeningCash" class="font-mono font-bold text-slate-200">0.00 ج.م</span>
+          <div class="flex justify-between items-center bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/40">
+            <span class="text-slate-400 font-medium">📱 محافظ / InstaPay:</span>
+            <span class="font-bold font-mono text-amber-400" id="pay-instapay">0.00 ج.م</span>
           </div>
-          <div class="bg-[#111827] p-2.5 rounded-xl border border-slate-800">
-            <span class="text-[10px] text-slate-500 block">مبيعات الوردية:</span>
-            <span id="shiftSalesTotal" class="font-mono font-bold text-emerald-400">0.00 ج.م</span>
+          <div class="flex justify-between items-center bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/40">
+            <span class="text-slate-400 font-medium">📝 مبيعات آجلة:</span>
+            <span class="font-bold font-mono text-purple-400" id="pay-credit">0.00 ج.م</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. حالة الوردية التشغيلية -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex justify-between items-center mb-3 border-b border-slate-800 pb-2">
+          <div class="flex items-center gap-1.5">
+            <span>⏱️</span>
+            <span class="text-sm font-extrabold text-slate-200">حالة الوردية التشغيلية (<span id="shift-num" class="font-mono text-cyan-400">#1</span>)</span>
+          </div>
+          <span id="shift-status-badge" class="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+            وردية مفتوحة ومفعلة
+          </span>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-2.5 text-xs">
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-800">
+            <span class="text-[10px] text-slate-400 block mb-0.5">الكاشير المسؤول:</span>
+            <span class="font-bold text-slate-200 truncate block" id="cashier-name">المالك (الإدارة)</span>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-800">
+            <span class="text-[10px] text-slate-400 block mb-0.5">وقت بدء الوردية:</span>
+            <span class="font-bold font-mono text-slate-200" id="shift-start">--:--</span>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-800">
+            <span class="text-[10px] text-slate-400 block mb-0.5">العهدة الافتتاحية:</span>
+            <span class="font-bold font-mono text-sky-400" id="opening-balance">0.00 ج.م</span>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-800">
+            <span class="text-[10px] text-slate-400 block mb-0.5">مبيعات الوردية:</span>
+            <span class="font-bold font-mono text-emerald-400" id="shift-sales">0.00 ج.م</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. تنبيهات النظام والعمليات -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center gap-2.5 shadow-sm">
+          <span class="text-xl">📑</span>
+          <div>
+            <div class="text-[11px] text-slate-400 font-bold">الفواتير المعلقة</div>
+            <div class="text-xs font-bold text-slate-200 mt-0.5" id="pending-invoices-text">لا توجد معلقة</div>
+          </div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center gap-2.5 shadow-sm">
+          <span class="text-xl">☁️</span>
+          <div>
+            <div class="text-[11px] text-slate-400 font-bold">المزامنة السحابية</div>
+            <div class="text-xs font-bold text-emerald-400 mt-0.5" id="cloud-sync-status">متصل ومحدث</div>
           </div>
         </div>
       </div>
 
     </div>
 
-    <!-- TAB 2: INVOICES (الفواتير) -->
+    <!-- TAB 2: INVOICES (سجل الفواتير الحية) -->
     <div id="tab-invoices" class="tab-content hidden space-y-3">
       <div class="flex items-center justify-between px-1">
-        <h2 class="text-xs font-bold text-slate-400">أحدث الفواتير المسجلة</h2>
-        <span id="invoicesCountBadge" class="text-[10px] font-mono bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full">0 فاتورة</span>
+        <h2 class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+          <span>🧾</span>
+          <span>سجل الفواتير الصادرة اليوم</span>
+        </h2>
+        <span id="invoicesCountBadge" class="text-[10px] font-mono bg-slate-800 text-cyan-400 px-2.5 py-0.5 rounded-full border border-slate-700">0 فاتورة</span>
       </div>
 
       <div id="invoicesListContainer" class="space-y-2">
-        <div class="text-center py-10 text-slate-500 text-xs">
-          <div class="text-2xl mb-2">🧾</div>
+        <div class="text-center py-12 text-slate-500 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
+          <div class="text-3xl mb-2">🧾</div>
           لا توجد فواتير مسجلة اليوم حتى الآن
         </div>
       </div>
@@ -218,67 +211,30 @@
     <!-- TAB 3: STOCK & LOW STOCK (المخزون والنواقص) -->
     <div id="tab-stock" class="tab-content hidden space-y-3">
       <div class="flex items-center justify-between px-1">
-        <h2 class="text-xs font-bold text-slate-400">تنبيهات الأصناف وقرب النفاد</h2>
-        <span id="stockAlertsBadge" class="text-[10px] font-mono bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-full">0 نواقص</span>
+        <h2 class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+          <span>📦</span>
+          <span>تنبيهات الأصناف وقرب النفاد</span>
+        </h2>
+        <span id="stockAlertsBadge" class="text-[10px] font-mono bg-rose-950 text-rose-300 border border-rose-800 px-2.5 py-0.5 rounded-full">0 نواقص</span>
       </div>
 
       <div id="lowStockListContainer" class="space-y-2">
-        <div class="text-center py-10 text-slate-500 text-xs">
-          <div class="text-2xl mb-2">📦</div>
+        <div class="text-center py-12 text-slate-500 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
+          <div class="text-3xl mb-2">📦</div>
           المخزون سليم بالكامل ولا توجد نواقص
-        </div>
-      </div>
-    </div>
-
-    <!-- Login / Token Input Modal (If no token is present) -->
-    <div id="loginScreen" class="hidden fixed inset-0 z-50 bg-[#0b0f17] p-5 flex flex-col justify-center items-center">
-      <div class="w-full max-w-sm bg-[#111827] border border-slate-700/80 rounded-3xl p-6 shadow-2xl space-y-5 text-center">
-        
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-600 mx-auto flex items-center justify-center text-3xl shadow-lg shadow-cyan-500/20 border border-cyan-400/40">
-          🛡️
-        </div>
-
-        <div>
-          <h2 class="text-lg font-black text-white">أمان كاشير — المتابعة السحابية</h2>
-          <p class="text-xs text-slate-400 mt-1">متابعة مبيعات ومخزون محلك لحظياً من أي مكان</p>
-        </div>
-
-        <form id="tokenLoginForm" onsubmit="handleTokenSubmit(event)" class="space-y-3.5 text-right">
-          <div>
-            <label class="block text-xs font-bold text-slate-300 mb-1.5">كود ربط المحل (Store Code):</label>
-            <input
-              type="text"
-              id="manualTokenInput"
-              required
-              placeholder="مثال: PAIR_QU1B-TI1G-QUNC"
-              class="w-full bg-[#1e293b] border border-slate-600 rounded-xl px-4 py-3 text-xs font-mono text-cyan-300 placeholder-slate-500 uppercase tracking-wider focus:outline-none focus:border-cyan-500"
-            />
-          </div>
-
-          <button
-            type="submit"
-            class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 transition active:scale-95"
-          >
-            دخول إلى لوحة المتابعة 🚀
-          </button>
-        </form>
-
-        <div class="text-[11px] text-slate-500 bg-slate-900/80 rounded-xl p-3 border border-slate-800 text-right leading-relaxed">
-          💡 <strong>كيف أحصل على الكود؟</strong><br>
-          افتح برنامج <strong>أمان كاشير</strong> على الكمبيوتر واضغط على زر <strong>"ربط الموبايل بالمحل"</strong> في شاشة البيع لنسخ الكود أو مسح رمز QR.
         </div>
       </div>
     </div>
 
     <!-- TAB 4: SYSTEM INFO & DEVICE (حالة الجهاز والنظام) -->
     <div id="tab-system" class="tab-content hidden space-y-3">
-      <div class="bg-[#161e2e] border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
-        <h2 class="font-bold text-slate-200 border-b border-slate-800 pb-2 flex items-center gap-1.5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs shadow-sm">
+        <h2 class="font-extrabold text-slate-200 border-b border-slate-800 pb-2 flex items-center gap-1.5">
           <span>🖥️</span>
-          <span>معلومات نقطة البيع والاتصال</span>
+          <span>معلومات نقطة البيع والاتصال السحابي</span>
         </h2>
 
-        <div class="space-y-2">
+        <div class="space-y-2.5">
           <div class="flex justify-between py-1 border-b border-slate-800/60">
             <span class="text-slate-400">اسم المتجر:</span>
             <span id="sysStoreName" class="font-bold text-white">أمان كاشير</span>
@@ -288,269 +244,563 @@
             <span id="sysMachineId" class="font-mono text-cyan-400 font-bold">AMAN-UNKNOWN</span>
           </div>
           <div class="flex justify-between py-1 border-b border-slate-800/60">
-            <span class="text-slate-400">رمز الربط الحالي:</span>
-            <span id="sysStoreToken" class="font-mono text-cyan-300 font-bold">—</span>
+            <span class="text-slate-400">رمز الاقتران (Token):</span>
+            <span id="sysToken" class="font-mono text-amber-400 font-bold">PAIR_...</span>
           </div>
           <div class="flex justify-between py-1 border-b border-slate-800/60">
-            <span class="text-slate-400">توقيت السيرفر السحابي:</span>
-            <span id="sysServerTime" class="font-mono text-slate-300">—</span>
-          </div>
-          <div class="flex justify-between py-1 border-b border-slate-800/60">
-            <span class="text-slate-400">آخر مزامنة ناجحة:</span>
-            <span id="sysLastSync" class="font-mono text-emerald-400 font-bold">—</span>
+            <span class="text-slate-400">حالة الترخيص:</span>
+            <span class="text-emerald-400 font-bold">نشط وسارٍ (PRO) 🌟</span>
           </div>
           <div class="flex justify-between py-1">
-            <span class="text-slate-400">صلاحيات هذا الرابط:</span>
-            <span class="font-bold text-amber-400 bg-amber-950/60 border border-amber-800/40 px-2 py-0.5 rounded text-[11px]">عرض وقراءة فقط (Read-Only)</span>
+            <span class="text-slate-400">آخر اتصال سحابي ناجح:</span>
+            <span id="sysLastSync" class="font-mono text-slate-300">--:--</span>
           </div>
-        </div>
-
-        <div class="pt-3 border-t border-slate-800">
-          <button
-            onclick="switchStoreOrLogout()"
-            class="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-rose-950 hover:text-rose-400 border border-slate-700 hover:border-rose-800 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition"
-          >
-            <span>🚪</span>
-            <span>تبديل المتجر / تسجيل خروج</span>
-          </button>
         </div>
       </div>
     </div>
 
   </main>
 
-  <!-- Fixed Bottom Navigation Bar -->
-  <nav class="fixed bottom-0 inset-x-0 bg-[#111827]/95 backdrop-blur-lg border-t border-slate-800 px-3 py-2 z-40">
-    <div class="grid grid-cols-4 gap-1 text-center">
-      
-      <button onclick="switchTab('overview')" id="nav-overview" class="nav-btn py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-cyan-400 font-bold transition">
-        <span class="text-lg">📊</span>
-        <span class="text-[10px]">الرئيسية</span>
-      </button>
-
-      <button onclick="switchTab('invoices')" id="nav-invoices" class="nav-btn py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-slate-400 font-semibold transition">
-        <span class="text-lg">🧾</span>
-        <span class="text-[10px]">الفواتير</span>
-      </button>
-
-      <button onclick="switchTab('stock')" id="nav-stock" class="nav-btn py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-slate-400 font-semibold transition">
-        <span class="text-lg">📦</span>
-        <span class="text-[10px]">النواقص</span>
-      </button>
-
-      <button onclick="switchTab('system')" id="nav-system" class="nav-btn py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-slate-400 font-semibold transition">
-        <span class="text-lg">⚙️</span>
-        <span class="text-[10px]">الجهاز</span>
-      </button>
-
-    </div>
+  <!-- Bottom Navigation Bar -->
+  <nav class="fixed bottom-0 left-0 right-0 z-40 bg-[#111827]/95 backdrop-blur-md border-t border-slate-800 flex justify-around items-center px-2 py-2 shadow-2xl">
+    <button onclick="switchTab('overview')" id="nav-overview" class="nav-btn flex flex-col items-center gap-1 text-cyan-400 font-bold text-[11px] py-1 px-3 rounded-xl transition">
+      <span class="text-lg">📊</span>
+      <span>الرئيسية</span>
+    </button>
+    <button onclick="switchTab('invoices')" id="nav-invoices" class="nav-btn flex flex-col items-center gap-1 text-slate-400 text-[11px] py-1 px-3 rounded-xl transition">
+      <span class="text-lg">🧾</span>
+      <span>الفواتير</span>
+    </button>
+    <button onclick="switchTab('stock')" id="nav-stock" class="nav-btn flex flex-col items-center gap-1 text-slate-400 text-[11px] py-1 px-3 rounded-xl transition">
+      <span class="text-lg">📦</span>
+      <span>النواقص</span>
+    </button>
+    <button onclick="switchTab('system')" id="nav-system" class="nav-btn flex flex-col items-center gap-1 text-slate-400 text-[11px] py-1 px-3 rounded-xl transition">
+      <span class="text-lg">⚙️</span>
+      <span>الجهاز</span>
+    </button>
   </nav>
 
+  <!-- Logic & Polling Script -->
   <script>
-    const STORAGE_KEY = 'aman_mobile_token';
     const urlParams = new URLSearchParams(window.location.search);
-    let token = urlParams.get('token') || localStorage.getItem(STORAGE_KEY) || '';
-    let activeTab = 'overview';
+    const token = (urlParams.get('token') || '').trim() || 'PAIR_QU1B-TI1G-QUNC';
+    const cachedInvoicesMap = new Map();
 
-    // If token found in URL, persist it
-    if (urlParams.get('token')) {
-      localStorage.setItem(STORAGE_KEY, urlParams.get('token'));
+    function formatMoney(amount) {
+      const num = Number(amount) || 0;
+      return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    function checkAuth() {
-      const loginScreen = document.getElementById('loginScreen');
-      if (!token || token.trim() === '') {
-        loginScreen.classList.remove('hidden');
-      } else {
-        loginScreen.classList.add('hidden');
-        document.getElementById('sysStoreToken').textContent = token;
-        fetchLiveSnapshot();
-      }
+    function formatShiftTime(dateVal) {
+      if (!dateVal) return '—';
+      let iso = String(dateVal).trim();
+      if (!iso || iso === 'null' || iso === 'undefined') return '—';
+      if (!iso.includes('T')) iso = iso.replace(' ', 'T');
+      if (!/[zZ]$/.test(iso) && !/[+-]\d{2}:?\d{2}$/.test(iso)) iso += 'Z';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return String(dateVal);
+      return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
     }
 
-    function handleTokenSubmit(e) {
-      e.preventDefault();
-      const input = document.getElementById('manualTokenInput').value.trim().toUpperCase();
-      if (!input) return;
-      token = input;
-      localStorage.setItem(STORAGE_KEY, token);
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.set('token', token);
-      window.history.replaceState({}, '', newUrl.toString());
-      checkAuth();
-    }
-
-    function switchStoreOrLogout() {
-      if (confirm('هل ترغب في تسجيل الخروج من هذا المتجر؟')) {
-        localStorage.removeItem(STORAGE_KEY);
-        token = '';
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.delete('token');
-        window.history.replaceState({}, '', newUrl.pathname);
-        checkAuth();
-      }
-    }
-
-    function switchTab(tabId) {
-      activeTab = tabId;
+    function switchTab(tabName) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-      const target = document.getElementById(`tab-${tabId}`);
-      if (target) target.classList.remove('hidden');
-
       document.querySelectorAll('.nav-btn').forEach(el => {
         el.classList.remove('text-cyan-400', 'font-bold');
-        el.classList.add('text-slate-400', 'font-semibold');
+        el.classList.add('text-slate-400');
       });
-      const activeNav = document.getElementById(`nav-${tabId}`);
+
+      const activeTab = document.getElementById('tab-' + tabName);
+      const activeNav = document.getElementById('nav-' + tabName);
+      if (activeTab) activeTab.classList.remove('hidden');
       if (activeNav) {
-        activeNav.classList.remove('text-slate-400', 'font-semibold');
+        activeNav.classList.remove('text-slate-400');
         activeNav.classList.add('text-cyan-400', 'font-bold');
       }
     }
 
-    function formatMoney(cents) {
-      return ((Number(cents) || 0) / 100).toFixed(2);
-    }
-
-    async function fetchLiveSnapshot(isManual = false) {
-      if (!token) {
-        checkAuth();
-        return;
-      }
-
+    async function loadData(isManual = false) {
       const refreshIcon = document.getElementById('refreshIcon');
-      if (isManual && refreshIcon) refreshIcon.classList.add('animate-spin');
+      if (refreshIcon && isManual) refreshIcon.classList.add('animate-spin');
 
       try {
-        const res = await fetch(`/api/cloud/data?token=${encodeURIComponent(token)}`);
+        const res = await fetch(`/api/sync?token=${encodeURIComponent(token)}&_t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
+        if (!res.ok) throw new Error('Network error HTTP ' + res.status);
         const json = await res.json();
+        const data = json.data || json;
 
-        if (res.ok && json.success && json.data) {
-          renderDashboard(json.data);
-          document.getElementById('syncStatusText').textContent = 'متصل بالسحابة';
-          document.getElementById('syncStatusText').className = 'text-[11px] text-emerald-400 font-bold';
-          document.getElementById('syncDot').className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        if (json.success && (json.data || json.snapshot)) {
+          renderSnapshot(data);
+          updateSyncStatus(true);
         } else {
-          document.getElementById('syncStatusText').textContent = 'بانتظار مزامنة الكاشير';
-          document.getElementById('syncStatusText').className = 'text-[11px] text-amber-400 font-bold';
-          document.getElementById('syncDot').className = 'w-2 h-2 rounded-full bg-amber-400';
+          updateSyncStatus(false, json.error || 'تعذر جلب البيانات');
         }
       } catch (err) {
-        document.getElementById('syncStatusText').textContent = 'تعذر الاتصال';
-        document.getElementById('syncStatusText').className = 'text-[11px] text-rose-400 font-bold';
-        document.getElementById('syncDot').className = 'w-2 h-2 rounded-full bg-rose-400';
+        console.warn('Sync error:', err);
+        updateSyncStatus(false, 'انقطع الاتصال بالسحابة');
       } finally {
         if (refreshIcon) refreshIcon.classList.remove('animate-spin');
       }
     }
 
-    function renderDashboard(data) {
+    const fetchLiveSnapshot = loadData;
+
+    function renderSnapshot(data) {
       const snap = data.snapshot || {};
       const storeName = data.storeName || 'أمان كاشير';
-      const machineId = data.machineId || 'AMAN-PC';
+      const machineId = data.machineId || 'AMAN-UNKNOWN';
 
+      // 1. Store & System Info
       document.getElementById('storeNameHeader').textContent = storeName;
-      document.getElementById('deviceMachineBadge').textContent = machineId;
       document.getElementById('sysStoreName').textContent = storeName;
       document.getElementById('sysMachineId').textContent = machineId;
-      document.getElementById('sysStoreToken').textContent = token;
+      document.getElementById('sysToken').textContent = token;
+      document.getElementById('deviceMachineBadge').textContent = machineId;
 
-      const lastSyncDate = data.lastSync ? new Date(data.lastSync) : new Date();
-      document.getElementById('lastSyncTimeText').textContent = lastSyncDate.toLocaleTimeString('ar-EG');
-      document.getElementById('sysLastSync').textContent = lastSyncDate.toLocaleString('ar-EG');
-      document.getElementById('sysServerTime').textContent = new Date().toLocaleTimeString('ar-EG');
-
-      // KPIs
+      // 2. Today's Key Metrics (Supporting all payload shapes: shiftSalesCents, todayTotalCents, total_sales, etc.)
+      const today = snap.today || {};
       const summary = snap.salesSummary || {};
-      document.getElementById('statTodaySales').textContent = formatMoney(summary.todayTotalCents);
-      document.getElementById('statTodayInvoices').textContent = summary.todayInvoiceCount || 0;
-      document.getElementById('statAvgInvoice').textContent = formatMoney(summary.averageInvoiceCents);
+      const shift = snap.current_shift || snap.activeShift || {};
 
-      // Payments
-      const payments = snap.paymentBreakdown || {};
-      document.getElementById('payCash').textContent = `${formatMoney(payments.cashCents)} ج.م`;
-      document.getElementById('payCard').textContent = `${formatMoney(payments.cardCents)} ج.م`;
-      document.getElementById('payCredit').textContent = `${formatMoney(payments.creditCents)} ج.م`;
-
-      // Shifts
-      const shift = snap.activeShift;
-      if (shift) {
-        document.getElementById('shiftStatusBadge').textContent = 'مفتوحة الآن';
-        document.getElementById('shiftStatusBadge').className = 'text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full';
-        document.getElementById('shiftCashierName').textContent = shift.cashierName || 'الرئيسي';
-        document.getElementById('shiftNumberText').textContent = `#${shift.shiftNumber || '01'}`;
-        document.getElementById('shiftOpeningCash').textContent = `${formatMoney(shift.openingCashCents)} ج.م`;
-        document.getElementById('shiftSalesTotal').textContent = `${formatMoney(shift.shiftSalesCents)} ج.م`;
+      // تحويل القروش إلى جنيهات من حقول مبيعات اليوم الفعلية حصراً (دون السقوط على مبيعات الوردية)
+      let rawSalesCents = 0;
+      if (today.total_sales_cents !== undefined && today.total_sales_cents !== null) {
+        rawSalesCents = Number(today.total_sales_cents);
+      } else if (today.total_sales !== undefined && today.total_sales !== null) {
+        rawSalesCents = Number(today.total_sales) * 100;
+      } else if (summary.todayTotalCents !== undefined && summary.todayTotalCents !== null) {
+        rawSalesCents = Number(summary.todayTotalCents);
+      } else if (data.todayTotalCents !== undefined && data.todayTotalCents !== null) {
+        rawSalesCents = Number(data.todayTotalCents);
       } else {
-        document.getElementById('shiftStatusBadge').textContent = 'مغلقة';
-        document.getElementById('shiftStatusBadge').className = 'text-[10px] font-bold bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full';
+        rawSalesCents = 0;
       }
 
-      // Low Stock
-      const lowStock = snap.lowStockProducts || [];
-      document.getElementById('statLowStockCount').textContent = lowStock.length;
-      document.getElementById('stockAlertsBadge').textContent = `${lowStock.length} نواقص`;
+      const totalSales = Number(rawSalesCents || 0) / 100;
 
-      const lowStockContainer = document.getElementById('lowStockListContainer');
-      if (lowStock.length > 0) {
-        lowStockContainer.innerHTML = lowStock.map(p => `
-          <div class="bg-[#161e2e] border border-rose-900/40 rounded-xl p-3 flex items-center justify-between text-xs">
-            <div>
-              <div class="font-bold text-slate-200">${p.name}</div>
-              <div class="text-[10px] text-slate-500 font-mono">باركود: ${p.barcode || '—'}</div>
-            </div>
-            <div class="text-left font-mono">
-              <span class="text-rose-400 font-bold">${p.stock_quantity}</span>
-              <span class="text-[10px] text-slate-400">/ حد الطلب: ${p.min_stock_alert || 5}</span>
-            </div>
-          </div>
-        `).join('');
+      // عدد الفواتير لليوم بأعلى أولوية
+      let rawInvoicesCount = 0;
+      if (today.invoices_count !== undefined && today.invoices_count !== null) {
+        rawInvoicesCount = Number(today.invoices_count);
+      } else if (summary.todayInvoiceCount !== undefined && summary.todayInvoiceCount !== null) {
+        rawInvoicesCount = Number(summary.todayInvoiceCount);
+      } else if (data.invoicesCount !== undefined && data.invoicesCount !== null) {
+        rawInvoicesCount = Number(data.invoicesCount);
       } else {
-        lowStockContainer.innerHTML = `
-          <div class="text-center py-10 text-slate-500 text-xs">
-            <div class="text-2xl mb-2">📦</div>
-            المخزون سليم بالكامل ولا توجد نواقص
-          </div>
-        `;
+        rawInvoicesCount = 0;
       }
 
-      // Recent Invoices
+      const invoiceCount = Number(rawInvoicesCount || 0);
+
+      const avgTicket = invoiceCount > 0 ? (totalSales / invoiceCount) : (Number(today.average_ticket || (summary.averageInvoiceCents ? summary.averageInvoiceCents / 100 : 0) || 0));
+
+      let rawNetProfitCents = 0;
+      if (today.net_profit_cents !== undefined && today.net_profit_cents !== null) {
+        rawNetProfitCents = Number(today.net_profit_cents);
+      } else if (summary.netProfitCents !== undefined && summary.netProfitCents !== null) {
+        rawNetProfitCents = Number(summary.netProfitCents);
+      } else if (today.net_profit !== undefined && today.net_profit !== null) {
+        rawNetProfitCents = Number(today.net_profit) * 100;
+      } else {
+        rawNetProfitCents = 0;
+      }
+
+      const netProfit = Number(rawNetProfitCents || 0) / 100;
+      const profitMargin = totalSales > 0 ? ((netProfit / totalSales) * 100) : (today.profit_margin || summary.profitMarginPct || 0);
+
+      // تحديث عناصر الـ DOM
+      const elTotalSales = document.getElementById('total-sales') || document.getElementById('today-sales');
+      if (elTotalSales) elTotalSales.innerHTML = `${formatMoney(totalSales)} <span class="text-xs font-sans">ج.م</span>`;
+
+      const elInvoicesCount = document.getElementById('invoices-count');
+      if (elInvoicesCount) elInvoicesCount.textContent = invoiceCount;
+
+      const elAvgTicket = document.getElementById('avg-ticket');
+      if (elAvgTicket) elAvgTicket.textContent = formatMoney(avgTicket);
+
+      const elNetProfit = document.getElementById('net-profit');
+      if (elNetProfit) elNetProfit.innerHTML = `${formatMoney(netProfit)} <span class="text-xs font-sans">ج.م</span>`;
+
+      const elProfitMargin = document.getElementById('profit-margin');
+      if (elProfitMargin) elProfitMargin.textContent = `${Number(profitMargin).toFixed(1)}%`;
+
+      // 3. Payment Breakdown
+      const pay = today.payment_methods || {};
+      const payLegacy = snap.paymentBreakdown || {};
+
+      const cash = pay.cash !== undefined ? Number(pay.cash) : (Number(payLegacy.cashCents || (today.payment_methods_cents?.cashCents) || 0) / 100);
+      const card = pay.card !== undefined ? Number(pay.card) : (Number(payLegacy.cardCents || (today.payment_methods_cents?.cardCents) || 0) / 100);
+      const instapay = pay.instapay !== undefined ? Number(pay.instapay) : (Number(payLegacy.instapayCents || (today.payment_methods_cents?.instapayCents) || 0) / 100);
+      const credit = pay.credit !== undefined ? Number(pay.credit) : (Number(payLegacy.creditCents || (today.payment_methods_cents?.creditCents) || 0) / 100);
+
+      document.getElementById('pay-cash').textContent = `${formatMoney(cash)} ج.م`;
+      document.getElementById('pay-card').textContent = `${formatMoney(card)} ج.م`;
+      document.getElementById('pay-instapay').textContent = `${formatMoney(instapay)} ج.م`;
+      document.getElementById('pay-credit').textContent = `${formatMoney(credit)} ج.م`;
+
+      // 4. Strict Shift Information Scoping (Current Shift ONLY)
+      const hasActiveShift = Boolean(
+        shift && 
+        typeof shift === 'object' && 
+        shift.id && 
+        (shift.status_code === 'OPEN' || shift.status === 'OPEN' || shift.status === 'وردية مفتوحة ومفعلة')
+      );
+
+      const shiftSales = hasActiveShift
+        ? (shift.shift_sales_cents !== undefined ? (shift.shift_sales_cents / 100) :
+           (shift.shiftSalesCents !== undefined ? (shift.shiftSalesCents / 100) :
+            (shift.shift_sales !== undefined ? Number(shift.shift_sales) : 0)))
+        : 0;
+
+      const openBal = hasActiveShift
+        ? (data.openingCashCents !== undefined ? (data.openingCashCents / 100) :
+           shift.opening_balance !== undefined ? Number(shift.opening_balance) :
+           (Number(shift.openingCashCents || shift.opening_balance_cents || 0) / 100))
+        : 0;
+
+      if (hasActiveShift) {
+        document.getElementById('shift-num').textContent = `#${shift.shift_number || shift.shiftNumber || 1}`;
+        document.getElementById('cashier-name').textContent = shift.cashier_name || shift.cashierName || 'المالك (الإدارة)';
+        document.getElementById('shift-start').textContent = formatShiftTime(shift.start_time || shift.openedAt || shift.opened_at);
+        document.getElementById('opening-balance').textContent = `${formatMoney(openBal)} ج.م`;
+        document.getElementById('shift-sales').textContent = `${formatMoney(shiftSales)} ج.م`;
+
+        const statusBadge = document.getElementById('shift-status-badge');
+        statusBadge.textContent = 'وردية مفتوحة ومفعلة';
+        statusBadge.className = 'text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full';
+      } else {
+        document.getElementById('shift-num').textContent = '—';
+        document.getElementById('cashier-name').textContent = '—';
+        document.getElementById('shift-start').textContent = '—';
+        document.getElementById('opening-balance').textContent = '0.00 ج.م';
+        document.getElementById('shift-sales').textContent = '0.00 ج.م';
+
+        const statusBadge = document.getElementById('shift-status-badge');
+        statusBadge.textContent = 'لا توجد وردية مفتوحة حالياً';
+        statusBadge.className = 'text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full';
+      }
+
+      // 5. Alerts (Low Stock & Pending)
+      const lowStockList = snap.lowStockProducts || [];
+      const lowCount = snap.alerts?.low_stock_count !== undefined ? snap.alerts.low_stock_count : lowStockList.length;
+      document.getElementById('low-stock').textContent = lowCount;
+      document.getElementById('stockAlertsBadge').textContent = `${lowCount} نواقص`;
+
+      const pendingCount = snap.alerts?.pending_invoices_count || 0;
+      document.getElementById('pending-invoices-text').textContent = pendingCount > 0 ? `${pendingCount} فواتير معلقة` : 'لا توجد معلقة';
+
+      // 6. Recent Invoices List
       const invoices = snap.recentInvoices || [];
       document.getElementById('invoicesCountBadge').textContent = `${invoices.length} فاتورة`;
       const invContainer = document.getElementById('invoicesListContainer');
-      if (invoices.length > 0) {
-        invContainer.innerHTML = invoices.map(inv => `
-          <div class="bg-[#161e2e] border border-slate-800 rounded-xl p-3 text-xs space-y-1.5">
-            <div class="flex items-center justify-between">
-              <span class="font-mono font-bold text-cyan-400">#${inv.invoice_number || inv.id}</span>
-              <span class="text-[10px] text-slate-400 font-mono">${inv.created_at ? new Date(inv.created_at).toLocaleTimeString('ar-EG') : '—'}</span>
-            </div>
-            <div class="flex items-center justify-between text-slate-300">
-              <span>الكاشير: ${inv.cashier_name || 'الرئيسي'}</span>
-              <span class="font-mono font-black text-emerald-400">${formatMoney(inv.final_amount_cents || inv.final_amount || 0)} ج.م</span>
-            </div>
-            <div class="text-[10px] text-slate-500 flex items-center justify-between border-t border-slate-800/80 pt-1">
-              <span>طريقة الدفع: ${inv.payment_method === 'CASH' ? 'نقدي' : inv.payment_method === 'CARD' ? 'فيزا' : 'آجل'}</span>
-              <span>${inv.items_count || (inv.items ? inv.items.length : 1)} أصناف</span>
-            </div>
-          </div>
-        `).join('');
-      } else {
+
+      // Update in-memory invoice lookup
+      cachedInvoicesMap.clear();
+      invoices.forEach(inv => {
+        if (inv.invoice_number) cachedInvoicesMap.set(String(inv.invoice_number), inv);
+        if (inv.id) cachedInvoicesMap.set(String(inv.id), inv);
+      });
+
+      if (invoices.length === 0) {
         invContainer.innerHTML = `
-          <div class="text-center py-10 text-slate-500 text-xs">
-            <div class="text-2xl mb-2">🧾</div>
+          <div class="text-center py-12 text-slate-500 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
+            <div class="text-3xl mb-2">🧾</div>
             لا توجد فواتير مسجلة اليوم حتى الآن
           </div>
         `;
+      } else {
+        invContainer.innerHTML = invoices.map(inv => {
+          const amount = (inv.final_amount_cents !== undefined ? inv.final_amount_cents : (inv.final_amount || 0)) / (inv.final_amount_cents !== undefined ? 100 : 1);
+          const time = inv.created_at ? new Date(inv.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—';
+          const pmUpper = String(inv.payment_method || '').trim().toUpperCase();
+          const payLabel = pmUpper === 'CASH' ? '💵 كاش' : (pmUpper === 'CARD' ? '💳 بطاقة' : (pmUpper === 'CREDIT' ? '📝 آجل' : '📱 محفظة'));
+          const cashier = inv.cashier_name || 'الرئيسي';
+          const itemsCount = inv.items_count !== undefined ? `${inv.items_count} أصناف` : (Array.isArray(inv.items) && inv.items.length > 0 ? `${inv.items.length} أصناف` : '—');
+          const invKey = inv.invoice_number || inv.id || 'INV';
+
+          return `
+            <div class="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 space-y-2.5 shadow-sm transition">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs font-bold text-cyan-400">#${invKey}</span>
+                  <span class="text-[10px] text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">${payLabel}</span>
+                </div>
+                <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+                  <span>🕒</span>
+                  <span>${time}</span>
+                </span>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-xs border-y border-slate-800/80 py-2">
+                <div>
+                  <span class="text-[10px] text-slate-400 block">العميل:</span>
+                  <span class="font-bold text-slate-200 truncate block">${inv.customer_name || 'عميل نقدي'}</span>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-400 block">الكاشير:</span>
+                  <span class="font-bold text-slate-300 truncate block">${cashier}</span>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-0.5">
+                <div class="text-[11px] text-slate-400 flex items-center gap-1">
+                  <span>📦</span>
+                  <span>الأصناف:</span>
+                  <span class="font-mono font-bold text-cyan-400">${itemsCount}</span>
+                </div>
+                <div class="text-left">
+                  <span class="text-sm font-black text-emerald-400 font-mono">${formatMoney(amount)}</span>
+                  <span class="text-[10px] text-slate-400 mr-1">ج.م</span>
+                </div>
+              </div>
+
+              <button onclick="showInvoiceDetails('${invKey}')" class="w-full py-2 px-3 bg-cyan-950/60 hover:bg-cyan-900/80 active:scale-[0.98] border border-cyan-800/60 text-cyan-300 font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
+                <span>🔍</span>
+                <span>عرض بنود الفاتورة</span>
+              </button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 7. Low Stock Items List
+      const stockContainer = document.getElementById('lowStockListContainer');
+      if (lowStockList.length === 0) {
+        stockContainer.innerHTML = `
+          <div class="text-center py-12 text-slate-500 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
+            <div class="text-3xl mb-2">📦</div>
+            المخزون سليم بالكامل ولا توجد نواقص
+          </div>
+        `;
+      } else {
+        stockContainer.innerHTML = lowStockList.map(p => `
+          <div class="bg-slate-900 border border-rose-900/40 rounded-xl p-3 flex items-center justify-between shadow-sm">
+            <div class="space-y-0.5">
+              <div class="text-xs font-bold text-slate-100">${p.name}</div>
+              <div class="text-[10px] font-mono text-slate-400">${p.barcode || ''}</div>
+            </div>
+            <div class="text-left">
+              <div class="text-xs font-black text-rose-400 font-mono">الرصيد: ${p.stock_quantity}</div>
+              <div class="text-[10px] text-slate-500">حد الطلب: ${p.min_stock_alert}</div>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // 8. Timestamps
+      const lastSyncTime = snap.last_sync || (data.lastSync ? new Date(data.lastSync).toLocaleTimeString('ar-EG') : new Date().toLocaleTimeString('ar-EG'));
+      document.getElementById('lastSyncTimeText').textContent = lastSyncTime;
+      document.getElementById('sysLastSync').textContent = lastSyncTime;
+    }
+
+    function updateSyncStatus(isOnline, message) {
+      const dot = document.getElementById('syncDot');
+      const text = document.getElementById('syncStatusText');
+      const cloudStatus = document.getElementById('cloud-sync-status');
+
+      if (isOnline) {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        text.textContent = 'متصل بالسحابة';
+        text.className = 'text-[11px] text-emerald-400 font-bold';
+        if (cloudStatus) cloudStatus.textContent = 'متصل ومحدث';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-rose-500';
+        text.textContent = message || 'غير متصل';
+        text.className = 'text-[11px] text-rose-400 font-bold';
+        if (cloudStatus) cloudStatus.textContent = 'انقطع الاتصال';
       }
     }
 
-    // Initialize
-    checkAuth();
-    // Auto-Polling every 3 seconds for continuous real-time sync
-    setInterval(() => {
-      if (token) fetchLiveSnapshot();
-    }, 3000);
+    async function showInvoiceDetails(invId) {
+      const modal = document.getElementById('invoiceModal');
+      const content = document.getElementById('invoiceModalContent');
+      const title = document.getElementById('modalInvoiceTitle');
+      if (!modal || !content) return;
+
+      modal.classList.remove('hidden');
+      if (title) title.textContent = `تفاصيل الفاتورة #${invId}`;
+      content.innerHTML = `
+        <div class="text-center py-10 space-y-2">
+          <div class="text-2xl animate-spin inline-block">🔄</div>
+          <div class="text-xs text-cyan-400 font-bold">جاري تحميل تفاصيل الفاتورة...</div>
+        </div>
+      `;
+
+      // 1. Check local cache
+      const cached = cachedInvoicesMap.get(String(invId)) || cachedInvoicesMap.get(String(invId).replace(/^INV-?/i, ''));
+      let invoiceData = cached ? { ...cached } : null;
+
+      // 2. Fetch from API if items are missing
+      if (!invoiceData || !Array.isArray(invoiceData.items) || invoiceData.items.length === 0) {
+        try {
+          const res = await fetch(`/api/v1/history/invoices?store_token=${encodeURIComponent(token)}&includeItems=true&invoice_id=${encodeURIComponent(invId)}&_t=${Date.now()}`);
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+              invoiceData = json.data[0];
+            }
+          }
+        } catch (err) {
+          console.warn('[Invoice Details Fetch Error]:', err);
+        }
+      }
+
+      if (!invoiceData) {
+        content.innerHTML = `
+          <div class="text-center py-8 space-y-2">
+            <div class="text-3xl text-rose-500">⚠️</div>
+            <div class="text-xs font-bold text-rose-400">تعذر تحميل تفاصيل الفاتورة</div>
+            <div class="text-[11px] text-slate-500">تأكد من اتصال السيرفر بقاعدة البيانات</div>
+          </div>
+        `;
+        return;
+      }
+
+      const invNum = invoiceData.invoice_number || invoiceData.id || invId;
+      if (title) title.textContent = `فاتورة #${invNum}`;
+
+      const pmUpper = String(invoiceData.payment_method || '').trim().toUpperCase();
+      const payLabel = pmUpper === 'CASH' ? '💵 كاش' : (pmUpper === 'CARD' ? '💳 بطاقة' : (pmUpper === 'CREDIT' ? '📝 آجل' : '📱 محفظة'));
+      const formattedDate = invoiceData.created_at ? new Date(invoiceData.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+      
+      const totalAmount = (invoiceData.final_amount_cents !== undefined ? invoiceData.final_amount_cents : (invoiceData.final_amount || 0)) / (invoiceData.final_amount_cents !== undefined ? 100 : 1);
+      const subtotalAmount = invoiceData.subtotal_cents !== undefined ? (invoiceData.subtotal_cents / 100) : (invoiceData.subtotal || totalAmount);
+      const discountAmount = invoiceData.discount_cents !== undefined ? (invoiceData.discount_cents / 100) : (invoiceData.discount_amount || 0);
+
+      const items = Array.isArray(invoiceData.items) ? invoiceData.items : [];
+
+      let itemsHtml = '';
+      if (items.length > 0) {
+        itemsHtml = `
+          <div class="space-y-1.5">
+            <div class="text-[11px] font-bold text-slate-400 flex items-center justify-between px-1">
+              <span>الأصناف والبنود المسجلة</span>
+              <span class="font-mono text-[10px] text-cyan-400 bg-slate-800 px-2 py-0.5 rounded">${items.length} أصناف</span>
+            </div>
+            <div class="bg-slate-900/90 rounded-xl border border-slate-800 divide-y divide-slate-800/80 overflow-hidden">
+              ${items.map((item, idx) => {
+                const pName = item.product_name || item.name || 'صنف';
+                const qty = item.quantity || 1;
+                const price = (item.unit_price_cents !== undefined ? item.unit_price_cents : (item.unit_price || item.unit_selling_price || 0)) / (item.unit_price_cents !== undefined ? 100 : 1);
+                const sub = (item.subtotal_cents !== undefined ? item.subtotal_cents : (item.subtotal || (price * qty))) / (item.subtotal_cents !== undefined ? 100 : 1);
+
+                return `
+                  <div class="p-2.5 flex items-center justify-between text-xs hover:bg-slate-800/40 transition">
+                    <div class="space-y-0.5 flex-1 pr-1">
+                      <div class="font-bold text-slate-200">${pName}</div>
+                      <div class="text-[10px] text-slate-400 font-mono">
+                        ${qty} × ${formatMoney(price)} ج.م
+                      </div>
+                    </div>
+                    <div class="text-left font-mono font-bold text-cyan-300">
+                      ${formatMoney(sub)} ج.م
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      } else {
+        itemsHtml = `
+          <div class="text-center py-4 bg-slate-900/50 rounded-xl border border-slate-800 text-[11px] text-slate-500">
+            تفاصيل البنود الفردية غير مدرجة في اللقطة الحالية
+          </div>
+        `;
+      }
+
+      content.innerHTML = `
+        <div class="space-y-3">
+          <!-- Summary Header Grid -->
+          <div class="bg-slate-900/80 rounded-xl border border-slate-800 p-3 space-y-2">
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span class="text-[10px] text-slate-400 block">رقم الفاتورة:</span>
+                <span class="font-mono font-bold text-cyan-400">#${invNum}</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-400 block">طريقة الدفع:</span>
+                <span class="font-bold text-slate-200">${payLabel}</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-400 block">العميل:</span>
+                <span class="font-bold text-slate-200">${invoiceData.customer_name || 'عميل نقدي'}</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-400 block">الكاشير:</span>
+                <span class="font-bold text-slate-300">${invoiceData.cashier_name || 'الرئيسي'}</span>
+              </div>
+            </div>
+            <div class="border-t border-slate-800/80 pt-2 flex justify-between text-[11px] text-slate-400">
+              <span>التاريخ والوقت:</span>
+              <span class="font-mono text-slate-300">${formattedDate}</span>
+            </div>
+          </div>
+
+          <!-- Items Breakdown -->
+          ${itemsHtml}
+
+          <!-- Financial Breakdown -->
+          <div class="bg-slate-900/90 rounded-xl border border-slate-800 p-3 space-y-1.5 text-xs">
+            <div class="flex justify-between text-slate-400">
+              <span>المجموع قبل الخصم:</span>
+              <span class="font-mono font-bold text-slate-200">${formatMoney(subtotalAmount)} ج.م</span>
+            </div>
+            ${discountAmount > 0 ? `
+              <div class="flex justify-between text-amber-400">
+                <span>الخصم الممنوح:</span>
+                <span class="font-mono font-bold">-${formatMoney(discountAmount)} ج.م</span>
+              </div>
+            ` : ''}
+            <div class="flex justify-between text-sm font-extrabold text-emerald-400 border-t border-slate-800 pt-2">
+              <span>الإجمالي النهائي:</span>
+              <span class="font-mono font-black text-base">${formatMoney(totalAmount)} ج.م</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeInvoiceModal() {
+      const modal = document.getElementById('invoiceModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    // Auto-polling every 5 seconds
+    loadData();
+    setInterval(loadData, 5000);
   </script>
+
+  <!-- INVOICE DETAILS MODAL -->
+  <div id="invoiceModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in" onclick="if(event.target === this) closeInvoiceModal()">
+    <div class="bg-[#111827] border border-slate-700 rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden" onclick="event.stopPropagation()">
+      <!-- Modal Header -->
+      <div class="flex justify-between items-center px-4 py-3 border-b border-slate-800 bg-slate-900/80">
+        <h3 class="font-extrabold text-sm text-white flex items-center gap-2">
+          <span>🧾</span>
+          <span id="modalInvoiceTitle">تفاصيل الفاتورة</span>
+        </h3>
+        <button onclick="closeInvoiceModal()" class="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-base font-bold transition">✕</button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div id="invoiceModalContent" class="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-3.5 text-xs">
+        <div class="text-center py-8 text-cyan-400 animate-pulse font-bold">جاري تحميل تفاصيل الفاتورة...</div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-4 py-3 border-t border-slate-800 bg-slate-900/60">
+        <button onclick="closeInvoiceModal()" class="w-full bg-slate-800 hover:bg-slate-700 active:scale-[0.99] text-slate-200 py-2 rounded-xl text-xs font-bold transition">
+          إغلاق
+        </button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

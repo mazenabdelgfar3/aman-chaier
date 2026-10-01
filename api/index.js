@@ -158,13 +158,13 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId) {
         discount_cents,
         payment_method
       FROM cloud_invoices 
-      WHERE ${whereClause} AND created_at >= CURRENT_DATE AND status = 'COMPLETED'
+      WHERE ${whereClause} AND created_at >= ((NOW() AT TIME ZONE 'Africa/Cairo')::date AT TIME ZONE 'Africa/Cairo') AND status = 'COMPLETED'
     ),
     today_returns AS (
       SELECT 
         COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
       FROM cloud_cash_movements
-      WHERE ${whereClause} AND created_at >= CURRENT_DATE AND movement_type = 'RETURN'
+      WHERE ${whereClause} AND created_at >= ((NOW() AT TIME ZONE 'Africa/Cairo')::date AT TIME ZONE 'Africa/Cairo') AND movement_type = 'RETURN'
     ),
     invoice_item_profits AS (
       SELECT 
