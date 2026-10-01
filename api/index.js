@@ -227,6 +227,97 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId) {
   };
 }
 
+// Shift-Scoped Aggregator for Store Sales, Payment Methods & Profit per Shift
+async function fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, shiftIdLocal) {
+  if (!shiftIdLocal) {
+    return fetchStoreTodaySalesAggregation(pool, token, orgId, storeId);
+  }
+
+  let whereClause = 'store_token = $1 AND shift_id_local = $2';
+  const queryParams = [token, shiftIdLocal];
+  if (orgId && storeId) {
+    whereClause = 'store_token = $1 AND org_id = $2 AND store_id = $3 AND shift_id_local = $4';
+    queryParams.push(orgId, storeId, shiftIdLocal);
+  }
+
+  const salesRes = await pool.query(`
+    WITH shift_invoices AS (
+      SELECT 
+        id,
+        invoice_id_local,
+        final_amount_cents,
+        discount_cents,
+        payment_method
+      FROM cloud_invoices 
+      WHERE ${whereClause} AND status = 'COMPLETED'
+    ),
+    shift_returns AS (
+      SELECT 
+        COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
+      FROM cloud_cash_movements
+      WHERE ${whereClause} AND movement_type = 'RETURN'
+    ),
+    invoice_item_profits AS (
+      SELECT 
+        cii.invoice_id_local,
+        COALESCE(SUM(
+          (cii.unit_price_cents - COALESCE(NULLIF(cii.unit_cost_cents, 0), CAST(cii.unit_price_cents * 0.70 AS BIGINT))) * cii.quantity
+        ), 0)::bigint as invoice_profit_cents,
+        COALESCE(SUM(
+          COALESCE(NULLIF(cii.unit_cost_cents, 0), CAST(cii.unit_price_cents * 0.70 AS BIGINT)) * cii.quantity
+        ), 0)::bigint as invoice_cogs_cents
+      FROM cloud_invoice_items cii
+      WHERE ${whereClause.replace(/shift_id_local = \$[24]/g, '1=1').replace(/store_token/g, 'cii.store_token').replace(/org_id/g, 'cii.org_id').replace(/store_id/g, 'cii.store_id')}
+        AND cii.invoice_id_local IN (SELECT invoice_id_local FROM shift_invoices)
+      GROUP BY cii.invoice_id_local
+    )
+    SELECT 
+      COUNT(ti.invoice_id_local)::int as invoices_count,
+      GREATEST(0, (COALESCE(SUM(ti.final_amount_cents), 0) - COALESCE(MAX(tr.total_return_cents), 0)))::bigint as total_sales_cents,
+      COALESCE(SUM(ti.discount_cents), 0)::bigint as discount_cents,
+      GREATEST(0, (COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('cash', 'نقدي', 'كاش') THEN ti.final_amount_cents ELSE 0 END), 0) - COALESCE(MAX(tr.total_return_cents), 0)))::bigint as cash_cents,
+      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('card', 'بطاقة', 'فيزا', 'visa') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as card_cents,
+      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('instapay', 'vodafone_cash', 'wallet', 'انستاباي', 'محفظة', 'فودافون كاش') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as instapay_cents,
+      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('credit', 'آجل', 'اجل', 'على الحساب') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as credit_cents,
+      COALESCE(SUM(p.invoice_cogs_cents), 0)::bigint as total_cogs_cents,
+      COALESCE(SUM(p.invoice_profit_cents), 0)::bigint as net_profit_cents
+    FROM shift_invoices ti
+    CROSS JOIN shift_returns tr
+    LEFT JOIN invoice_item_profits p ON ti.invoice_id_local = p.invoice_id_local
+  `, queryParams);
+
+  if (salesRes.rows && salesRes.rows.length > 0) {
+    const row = salesRes.rows[0];
+    const totalSalesCents = Number(row.total_sales_cents) || 0;
+    const netProfitCents = Number(row.net_profit_cents) || 0;
+    const profitMarginPct = totalSalesCents > 0 ? Math.round((netProfitCents / totalSalesCents) * 1000) / 10 : 0;
+
+    return {
+      invoicesCount: Number(row.invoices_count) || 0,
+      totalSalesCents,
+      cashCents: Number(row.cash_cents) || 0,
+      cardCents: Number(row.card_cents) || 0,
+      instapayCents: Number(row.instapay_cents) || 0,
+      creditCents: Number(row.credit_cents) || 0,
+      cogsCents: Number(row.total_cogs_cents) || 0,
+      netProfitCents,
+      profitMarginPct
+    };
+  }
+
+  return {
+    invoicesCount: 0,
+    totalSalesCents: 0,
+    cashCents: 0,
+    cardCents: 0,
+    instapayCents: 0,
+    creditCents: 0,
+    cogsCents: 0,
+    netProfitCents: 0,
+    profitMarginPct: 0
+  };
+}
+
 /**
  * Server-Side Authoritative Multi-Tenant Authentication & Resolution
  * Enforces hierarchy: LICENSE -> ORG/TENANT -> STORE -> DEVICE -> PAIRING -> SESSION
@@ -347,7 +438,7 @@ async function resolveCloudTenantAuth(clientOrPool, { token, deviceId, deviceKey
   };
 }
 
-async function getPersistedSnapshot(token) {
+async function getPersistedSnapshot(token, requestedShiftId = null) {
   const pool = db.getPool();
   let authContext = null;
 
@@ -364,7 +455,7 @@ async function getPersistedSnapshot(token) {
   }
 
   try {
-    if (redis && token) {
+    if (redis && token && !requestedShiftId) {
       let snap = await redis.get(`snapshot:${token}`);
       if (Array.isArray(snap) && snap.length > 0) snap = snap[0];
       if (typeof snap === 'string') {
@@ -383,16 +474,6 @@ async function getPersistedSnapshot(token) {
     if (pool && token) {
       const orgId = authContext?.orgId;
       const storeId = authContext?.storeId;
-      const agg = await fetchStoreTodaySalesAggregation(pool, token, orgId, storeId);
-      const totalSalesCents = agg.totalSalesCents;
-      const invoicesCount = agg.invoicesCount;
-      const cashCents = agg.cashCents;
-      const cardCents = agg.cardCents;
-      const instapayCents = agg.instapayCents;
-      const creditCents = agg.creditCents;
-      const netProfitCents = agg.netProfitCents;
-      const profitMarginPct = agg.profitMarginPct;
-      const avgTicketCents = invoicesCount > 0 ? Math.round(totalSalesCents / invoicesCount) : 0;
 
       let shiftWhere = 'store_token = $1 AND status = \'OPEN\'';
       let invWhere = 'store_token = $1';
@@ -409,15 +490,35 @@ async function getPersistedSnapshot(token) {
         ORDER BY opened_at DESC LIMIT 1
       `, qParams);
 
+      const activeShift = shiftRes.rows?.[0] || null;
+      const effectiveShiftId = requestedShiftId || activeShift?.shift_id_local || null;
+
+      const agg = effectiveShiftId
+        ? await fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, effectiveShiftId)
+        : await fetchStoreTodaySalesAggregation(pool, token, orgId, storeId);
+
+      const totalSalesCents = agg.totalSalesCents;
+      const invoicesCount = agg.invoicesCount;
+      const cashCents = agg.cashCents;
+      const cardCents = agg.cardCents;
+      const instapayCents = agg.instapayCents;
+      const creditCents = agg.creditCents;
+      const netProfitCents = agg.netProfitCents;
+      const profitMarginPct = agg.profitMarginPct;
+      const avgTicketCents = invoicesCount > 0 ? Math.round(totalSalesCents / invoicesCount) : 0;
+
+      const invWhereWithShift = effectiveShiftId
+        ? `${invWhere} AND shift_id_local = $${qParams.length + 1}`
+        : invWhere;
+      const invParams = effectiveShiftId ? [...qParams, effectiveShiftId] : qParams;
+
       const recentInvRes = await pool.query(`
         SELECT invoice_id_local as id, invoice_number, cashier_name, customer_name, payment_method, final_amount_cents, created_at, device_id
         FROM cloud_invoices
-        WHERE ${invWhere}
+        WHERE ${invWhereWithShift}
         ORDER BY created_at DESC, id DESC
         LIMIT 50
-      `, qParams);
-
-      const activeShift = shiftRes.rows?.[0] || null;
+      `, invParams);
 
       const rebuiltSnapshot = {
         today: {
@@ -2119,8 +2220,9 @@ module.exports = async (req, res) => {
       res.setHeader('Surrogate-Control', 'no-store');
 
       const token = (url.searchParams.get('token') || '').trim() || 'PAIR_QU1B-TI1G-QUNC';
+      const requestedShiftId = (url.searchParams.get('shift_id') || url.searchParams.get('shift') || '').trim() || null;
 
-      let storeData = await getPersistedSnapshot(token);
+      let storeData = await getPersistedSnapshot(token, requestedShiftId);
       if (!storeData) {
         return res.status(404).json({
           success: false,

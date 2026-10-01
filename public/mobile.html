@@ -285,6 +285,7 @@
   <script>
     const urlParams = new URLSearchParams(window.location.search);
     const token = (urlParams.get('token') || '').trim() || 'PAIR_QU1B-TI1G-QUNC';
+    const shiftId = (urlParams.get('shift_id') || urlParams.get('shift') || '').trim();
     const cachedInvoicesMap = new Map();
 
     function formatMoney(amount) {
@@ -324,7 +325,8 @@
       if (refreshIcon && isManual) refreshIcon.classList.add('animate-spin');
 
       try {
-        const res = await fetch(`/api/sync?token=${encodeURIComponent(token)}&_t=${Date.now()}`, {
+        const shiftQuery = shiftId ? `&shift_id=${encodeURIComponent(shiftId)}` : '';
+        const res = await fetch(`/api/sync?token=${encodeURIComponent(token)}${shiftQuery}&_t=${Date.now()}`, {
           cache: 'no-store',
           headers: {
             'Cache-Control': 'no-cache',
