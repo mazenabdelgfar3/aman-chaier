@@ -141,12 +141,19 @@ async function setDeviceSequence(token, deviceId, seq) {
 }
 
 // Unified Single-Source-of-Truth Aggregator for Store Today Sales, Payment Methods & Profit
-async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId) {
+async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId, targetDate = null) {
   let whereClause = 'store_token = $1';
   const queryParams = [token];
   if (orgId && storeId) {
     whereClause = 'store_token = $1 AND org_id = $2 AND store_id = $3';
     queryParams.push(orgId, storeId);
+  }
+
+  let dateFilter = `created_at >= ((NOW() AT TIME ZONE 'Africa/Cairo')::date AT TIME ZONE 'Africa/Cairo') AND created_at < (((NOW() AT TIME ZONE 'Africa/Cairo')::date + INTERVAL '1 day') AT TIME ZONE 'Africa/Cairo')`;
+  if (targetDate && typeof targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(targetDate.trim())) {
+    const dParamIdx = queryParams.length + 1;
+    queryParams.push(targetDate.trim());
+    dateFilter = `created_at >= ($${dParamIdx}::date AT TIME ZONE 'Africa/Cairo') AND created_at < (($${dParamIdx}::date + INTERVAL '1 day') AT TIME ZONE 'Africa/Cairo')`;
   }
 
   const salesRes = await pool.query(`
@@ -158,7 +165,7 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId) {
         discount_cents,
         payment_method
       FROM cloud_invoices 
-      WHERE ${whereClause} AND created_at >= ((NOW() AT TIME ZONE 'Africa/Cairo')::date AT TIME ZONE 'Africa/Cairo') AND status = 'COMPLETED'
+      WHERE ${whereClause} AND ${dateFilter} AND status = 'COMPLETED'
     ),
     invoice_item_profits AS (
       SELECT 
@@ -192,7 +199,7 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId) {
       SELECT
         COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
       FROM cloud_cash_movements
-      WHERE ${whereClause} AND created_at >= ((NOW() AT TIME ZONE 'Africa/Cairo')::date AT TIME ZONE 'Africa/Cairo') AND movement_type = 'RETURN'
+      WHERE ${whereClause} AND ${dateFilter} AND movement_type = 'RETURN'
     )
     SELECT 
       s.invoices_count,
