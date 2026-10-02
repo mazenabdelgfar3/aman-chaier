@@ -2131,6 +2131,13 @@ module.exports = async (req, res) => {
               markIdempotencyProcessed(token, deviceId, evId).catch(() => {});
             }
 
+            if (dbResult.committedCount > 0) {
+              if (redis) {
+                try { await redis.del(`snapshot:${token}`); } catch {}
+              }
+              cloudSnapshots.delete(token);
+            }
+
             const deviceRecord = {
               token,
               deviceId,
