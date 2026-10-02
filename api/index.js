@@ -1044,6 +1044,14 @@ module.exports = async (req, res) => {
 
     // 1. GET /api/history
     if (pathname === '/api/history' && req.method === 'GET') {
+      const authRes = await authenticateAdminOrPlatformRole(req, db.getPool());
+      if (!authRes.authorized) {
+        return res.status(authRes.statusCode || 401).json({
+          success: false,
+          error: authRes.error,
+          message: authRes.message || 'Authentication required for history'
+        });
+      }
       return res.status(200).json(memoryStore);
     }
 
@@ -1077,6 +1085,14 @@ module.exports = async (req, res) => {
 
     // 3. GET /api/audit-logs
     if (pathname === '/api/audit-logs' && req.method === 'GET') {
+      const authRes = await authenticateAdminOrPlatformRole(req, db.getPool());
+      if (!authRes.authorized) {
+        return res.status(authRes.statusCode || 401).json({
+          success: false,
+          error: authRes.error,
+          message: authRes.message || 'Authentication required for audit logs'
+        });
+      }
       return res.status(200).json(auditStore);
     }
 
@@ -2219,7 +2235,14 @@ module.exports = async (req, res) => {
       res.setHeader('Expires', '0');
       res.setHeader('Surrogate-Control', 'no-store');
 
-      const token = (url.searchParams.get('token') || '').trim() || 'PAIR_QU1B-TI1G-QUNC';
+      const token = (url.searchParams.get('token') || '').trim();
+      if (!token) {
+        return res.status(400).json({
+          success: false,
+          error: 'TOKEN_REQUIRED',
+          message: 'store_token or pairing token is required.'
+        });
+      }
       const requestedShiftId = (url.searchParams.get('shift_id') || url.searchParams.get('shift') || '').trim() || null;
 
       let storeData = await getPersistedSnapshot(token, requestedShiftId);

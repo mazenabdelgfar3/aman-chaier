@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl" class="dark">
 <head>
   <meta charset="UTF-8">
@@ -370,7 +370,8 @@
 
     async function loadHistory() {
       try {
-        const res = await fetch('/api/history');
+        const res = await adminFetch('/api/history');
+        if (!res.ok) return;
         const data = await res.json();
         renderHistory(data);
         loadStats();
@@ -392,7 +393,7 @@
     function renderHistory(items) {
       const tbody = document.getElementById('historyTableBody');
       const empty = document.getElementById('emptyState');
-      if (!items || items.length === 0) {
+      if (!items || !Array.isArray(items) || items.length === 0) {
         tbody.innerHTML = '';
         empty.classList.remove('hidden');
         return;
@@ -483,10 +484,14 @@
     }
 
     async function fetchAuditLogs() {
-      const res = await fetch('/api/audit-logs');
+      const res = await adminFetch('/api/audit-logs');
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) alert('غير مصرح للوصول إلى سجل الحركات.');
+        return;
+      }
       const logs = await res.json();
       const container = document.getElementById('auditLogsBody');
-      if (!logs || logs.length === 0) {
+      if (!logs || !Array.isArray(logs) || logs.length === 0) {
         container.innerHTML = '<div class="text-gray-500 py-6 text-center">لا توجد حركات مسجلة.</div>';
       } else {
         container.innerHTML = logs.map(l => `
