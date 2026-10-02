@@ -516,11 +516,18 @@ async function getPersistedSnapshot(token, requestedShiftId = null) {
         ORDER BY opened_at DESC LIMIT 1
       `, qParams);
 
-      const activeShift = shiftRes.rows?.[0] || null;
-      const effectiveShiftId = requestedShiftId || activeShift?.shift_id_local || null;
+      let activeShift = shiftRes.rows?.[0] ? { ...shiftRes.rows[0] } : null;
+      if (activeShift && activeShift.shift_id_local) {
+        try {
+          const shiftAgg = await fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, activeShift.shift_id_local);
+          activeShift.shift_sales_cents = shiftAgg.totalSalesCents;
+        } catch (sErr) {
+          console.warn('[Shift Sales Aggregation Warning]:', sErr.message);
+        }
+      }
 
-      const agg = effectiveShiftId
-        ? await fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, effectiveShiftId)
+      const agg = requestedShiftId
+        ? await fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, requestedShiftId)
         : await fetchStoreTodaySalesAggregation(pool, token, orgId, storeId);
 
       const totalSalesCents = agg.totalSalesCents;
@@ -533,10 +540,10 @@ async function getPersistedSnapshot(token, requestedShiftId = null) {
       const profitMarginPct = agg.profitMarginPct;
       const avgTicketCents = invoicesCount > 0 ? Math.round(totalSalesCents / invoicesCount) : 0;
 
-      const invWhereWithShift = effectiveShiftId
+      const invWhereWithShift = requestedShiftId
         ? `${invWhere} AND shift_id_local = $${qParams.length + 1}`
         : invWhere;
-      const invParams = effectiveShiftId ? [...qParams, effectiveShiftId] : qParams;
+      const invParams = requestedShiftId ? [...qParams, requestedShiftId] : qParams;
 
       const recentInvRes = await pool.query(`
         SELECT invoice_id_local as id, invoice_number, cashier_name, customer_name, payment_method, final_amount_cents, created_at, device_id
@@ -688,7 +695,15 @@ async function saveDeviceSnapshotAndAggregate(token, deviceId, deviceRecord) {
         ORDER BY opened_at DESC LIMIT 1
       `, [token]);
       if (shiftRes.rows && shiftRes.rows.length > 0) {
-        activeShift = shiftRes.rows[0];
+        activeShift = { ...shiftRes.rows[0] };
+        if (activeShift.shift_id_local) {
+          try {
+            const shiftAgg = await fetchStoreShiftSalesAggregation(pool, token, activeShift.org_id, activeShift.store_id, activeShift.shift_id_local);
+            activeShift.shift_sales_cents = shiftAgg.totalSalesCents;
+          } catch (sErr) {
+            console.warn('[Shift Sales Aggregation Warning]:', sErr.message);
+          }
+        }
       }
     } catch (pgErr) {
       console.warn('[PostgreSQL Aggregation Error - Falling back]:', pgErr.message);
