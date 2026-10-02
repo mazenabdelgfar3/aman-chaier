@@ -203,7 +203,7 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId) {
       s.instapay_cents,
       s.credit_cents,
       s.total_cogs_cents,
-      s.net_profit_cents
+      GREATEST(0, (s.net_profit_cents - s.discount_cents))::bigint as net_profit_cents
     FROM sales_summary s
     CROSS JOIN returns_summary r
   `, queryParams);
@@ -307,7 +307,7 @@ async function fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, shif
       s.instapay_cents,
       s.credit_cents,
       s.total_cogs_cents,
-      s.net_profit_cents
+      GREATEST(0, (s.net_profit_cents - s.discount_cents))::bigint as net_profit_cents
     FROM sales_summary s
     CROSS JOIN returns_summary r
   `, queryParams);
@@ -1835,10 +1835,41 @@ module.exports = async (req, res) => {
                         const pId = String(item.product_id || item.productId || item.id || 'ITEM-01');
                         const pName = item.product_name || item.productName || item.name || 'صنف';
                         const barcode = item.barcode || '';
-                        const unitCost = Number(item.unit_cost_cents || item.unit_cost_price || item.cost_price || item.costPrice || 0);
-                        const unitPrice = Number(item.unit_price_cents || item.unit_selling_price || item.selling_price || item.unitPrice || 0);
+                        let unitCost = 0;
+                        if (item.unit_cost_cents !== undefined && item.unit_cost_cents !== null) {
+                          unitCost = Math.round(Number(item.unit_cost_cents) || 0);
+                        } else if (item.cost_price_cents !== undefined && item.cost_price_cents !== null) {
+                          unitCost = Math.round(Number(item.cost_price_cents) || 0);
+                        } else {
+                          const rawCost = item.unit_cost_price ?? item.cost_price ?? item.costPrice ?? item.unit_cost ?? item.cost ?? item.buy_price ?? item.buyPrice ?? item.unitCost;
+                          if (rawCost !== undefined && rawCost !== null) {
+                            unitCost = Math.round((Number(rawCost) || 0) * 100);
+                          }
+                        }
+
+                        let unitPrice = 0;
+                        if (item.unit_price_cents !== undefined && item.unit_price_cents !== null) {
+                          unitPrice = Math.round(Number(item.unit_price_cents) || 0);
+                        } else if (item.selling_price_cents !== undefined && item.selling_price_cents !== null) {
+                          unitPrice = Math.round(Number(item.selling_price_cents) || 0);
+                        } else {
+                          const rawPrice = item.unit_selling_price ?? item.selling_price ?? item.unitPrice ?? item.price;
+                          if (rawPrice !== undefined && rawPrice !== null) {
+                            unitPrice = Math.round((Number(rawPrice) || 0) * 100);
+                          }
+                        }
+
                         const qty = Number(item.quantity || 1);
-                        const lineSubtotal = Number(item.subtotal_cents || item.subtotal || item.itemSubtotal || (unitPrice * qty));
+                        let lineSubtotal = 0;
+                        if (item.subtotal_cents !== undefined && item.subtotal_cents !== null) {
+                          lineSubtotal = Math.round(Number(item.subtotal_cents) || 0);
+                        } else if (item.subtotal !== undefined && item.subtotal !== null) {
+                          lineSubtotal = Math.round((Number(item.subtotal) || 0) * 100);
+                        } else if (item.itemSubtotal !== undefined && item.itemSubtotal !== null) {
+                          lineSubtotal = Math.round((Number(item.itemSubtotal) || 0) * 100);
+                        } else {
+                          lineSubtotal = unitPrice * qty;
+                        }
 
                         await client.query(`
                           INSERT INTO cloud_invoice_items (
