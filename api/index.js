@@ -160,12 +160,6 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId) {
       FROM cloud_invoices 
       WHERE ${whereClause} AND created_at >= ((NOW() AT TIME ZONE 'Africa/Cairo')::date AT TIME ZONE 'Africa/Cairo') AND status = 'COMPLETED'
     ),
-    today_returns AS (
-      SELECT 
-        COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
-      FROM cloud_cash_movements
-      WHERE ${whereClause} AND created_at >= ((NOW() AT TIME ZONE 'Africa/Cairo')::date AT TIME ZONE 'Africa/Cairo') AND movement_type = 'RETURN'
-    ),
     invoice_item_profits AS (
       SELECT 
         cii.invoice_id_local,
@@ -179,20 +173,39 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId) {
       WHERE ${whereClause.replace(/store_token/g, 'cii.store_token').replace(/org_id/g, 'cii.org_id').replace(/store_id/g, 'cii.store_id')}
         AND cii.invoice_id_local IN (SELECT invoice_id_local FROM today_invoices)
       GROUP BY cii.invoice_id_local
+    ),
+    sales_summary AS (
+      SELECT
+        COUNT(ti.invoice_id_local)::int as invoices_count,
+        COALESCE(SUM(ti.final_amount_cents), 0)::bigint as gross_sales_cents,
+        COALESCE(SUM(ti.discount_cents), 0)::bigint as discount_cents,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('cash', 'نقدي', 'كاش') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as gross_cash_cents,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('card', 'بطاقة', 'فيزا', 'visa') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as card_cents,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('instapay', 'vodafone_cash', 'wallet', 'انستاباي', 'محفظة', 'فودافون كاش') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as instapay_cents,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('credit', 'آجل', 'اجل', 'على الحساب') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as credit_cents,
+        COALESCE(SUM(p.invoice_cogs_cents), 0)::bigint as total_cogs_cents,
+        COALESCE(SUM(p.invoice_profit_cents), 0)::bigint as net_profit_cents
+      FROM today_invoices ti
+      LEFT JOIN invoice_item_profits p ON ti.invoice_id_local = p.invoice_id_local
+    ),
+    returns_summary AS (
+      SELECT
+        COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
+      FROM cloud_cash_movements
+      WHERE ${whereClause} AND created_at >= ((NOW() AT TIME ZONE 'Africa/Cairo')::date AT TIME ZONE 'Africa/Cairo') AND movement_type = 'RETURN'
     )
     SELECT 
-      COUNT(ti.invoice_id_local)::int as invoices_count,
-      GREATEST(0, (COALESCE(SUM(ti.final_amount_cents), 0) - COALESCE(MAX(tr.total_return_cents), 0)))::bigint as total_sales_cents,
-      COALESCE(SUM(ti.discount_cents), 0)::bigint as discount_cents,
-      GREATEST(0, (COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('cash', 'نقدي', 'كاش') THEN ti.final_amount_cents ELSE 0 END), 0) - COALESCE(MAX(tr.total_return_cents), 0)))::bigint as cash_cents,
-      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('card', 'بطاقة', 'فيزا', 'visa') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as card_cents,
-      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('instapay', 'vodafone_cash', 'wallet', 'انستاباي', 'محفظة', 'فودافون كاش') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as instapay_cents,
-      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('credit', 'آجل', 'اجل', 'على الحساب') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as credit_cents,
-      COALESCE(SUM(p.invoice_cogs_cents), 0)::bigint as total_cogs_cents,
-      COALESCE(SUM(p.invoice_profit_cents), 0)::bigint as net_profit_cents
-    FROM today_invoices ti
-    CROSS JOIN today_returns tr
-    LEFT JOIN invoice_item_profits p ON ti.invoice_id_local = p.invoice_id_local
+      s.invoices_count,
+      GREATEST(0, (s.gross_sales_cents - r.total_return_cents))::bigint as total_sales_cents,
+      s.discount_cents,
+      GREATEST(0, (s.gross_cash_cents - r.total_return_cents))::bigint as cash_cents,
+      s.card_cents,
+      s.instapay_cents,
+      s.credit_cents,
+      s.total_cogs_cents,
+      s.net_profit_cents
+    FROM sales_summary s
+    CROSS JOIN returns_summary r
   `, queryParams);
 
   if (salesRes.rows && salesRes.rows.length > 0) {
@@ -251,12 +264,6 @@ async function fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, shif
       FROM cloud_invoices 
       WHERE ${whereClause} AND status = 'COMPLETED'
     ),
-    shift_returns AS (
-      SELECT 
-        COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
-      FROM cloud_cash_movements
-      WHERE ${whereClause} AND movement_type = 'RETURN'
-    ),
     invoice_item_profits AS (
       SELECT 
         cii.invoice_id_local,
@@ -270,20 +277,39 @@ async function fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, shif
       WHERE ${whereClause.replace(/shift_id_local = \$[24]/g, '1=1').replace(/store_token/g, 'cii.store_token').replace(/org_id/g, 'cii.org_id').replace(/store_id/g, 'cii.store_id')}
         AND cii.invoice_id_local IN (SELECT invoice_id_local FROM shift_invoices)
       GROUP BY cii.invoice_id_local
+    ),
+    sales_summary AS (
+      SELECT
+        COUNT(ti.invoice_id_local)::int as invoices_count,
+        COALESCE(SUM(ti.final_amount_cents), 0)::bigint as gross_sales_cents,
+        COALESCE(SUM(ti.discount_cents), 0)::bigint as discount_cents,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('cash', 'نقدي', 'كاش') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as gross_cash_cents,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('card', 'بطاقة', 'فيزا', 'visa') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as card_cents,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('instapay', 'vodafone_cash', 'wallet', 'انستاباي', 'محفظة', 'فودافون كاش') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as instapay_cents,
+        COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('credit', 'آجل', 'اجل', 'على الحساب') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as credit_cents,
+        COALESCE(SUM(p.invoice_cogs_cents), 0)::bigint as total_cogs_cents,
+        COALESCE(SUM(p.invoice_profit_cents), 0)::bigint as net_profit_cents
+      FROM shift_invoices ti
+      LEFT JOIN invoice_item_profits p ON ti.invoice_id_local = p.invoice_id_local
+    ),
+    returns_summary AS (
+      SELECT
+        COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
+      FROM cloud_cash_movements
+      WHERE ${whereClause} AND movement_type = 'RETURN'
     )
     SELECT 
-      COUNT(ti.invoice_id_local)::int as invoices_count,
-      GREATEST(0, (COALESCE(SUM(ti.final_amount_cents), 0) - COALESCE(MAX(tr.total_return_cents), 0)))::bigint as total_sales_cents,
-      COALESCE(SUM(ti.discount_cents), 0)::bigint as discount_cents,
-      GREATEST(0, (COALESCE(SUM(CASE WHEN LOWER(TRIM(ti.payment_method)) IN ('cash', 'نقدي', 'كاش') THEN ti.final_amount_cents ELSE 0 END), 0) - COALESCE(MAX(tr.total_return_cents), 0)))::bigint as cash_cents,
-      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('card', 'بطاقة', 'فيزا', 'visa') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as card_cents,
-      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('instapay', 'vodafone_cash', 'wallet', 'انستاباي', 'محفظة', 'فودافون كاش') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as instapay_cents,
-      COALESCE(SUM(CASE WHEN LOWER(TRIM(payment_method)) IN ('credit', 'آجل', 'اجل', 'على الحساب') THEN ti.final_amount_cents ELSE 0 END), 0)::bigint as credit_cents,
-      COALESCE(SUM(p.invoice_cogs_cents), 0)::bigint as total_cogs_cents,
-      COALESCE(SUM(p.invoice_profit_cents), 0)::bigint as net_profit_cents
-    FROM shift_invoices ti
-    CROSS JOIN shift_returns tr
-    LEFT JOIN invoice_item_profits p ON ti.invoice_id_local = p.invoice_id_local
+      s.invoices_count,
+      GREATEST(0, (s.gross_sales_cents - r.total_return_cents))::bigint as total_sales_cents,
+      s.discount_cents,
+      GREATEST(0, (s.gross_cash_cents - r.total_return_cents))::bigint as cash_cents,
+      s.card_cents,
+      s.instapay_cents,
+      s.credit_cents,
+      s.total_cogs_cents,
+      s.net_profit_cents
+    FROM sales_summary s
+    CROSS JOIN returns_summary r
   `, queryParams);
 
   if (salesRes.rows && salesRes.rows.length > 0) {
