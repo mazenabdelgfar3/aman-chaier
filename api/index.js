@@ -1774,7 +1774,17 @@ module.exports = async (req, res) => {
                   const entityType = ev.entityType || ev.entity_type || 'INVOICE';
                   const entityId = ev.entityId || ev.entity_id || evId;
                   const evSeq = Number(ev.sequence || ev.sequence_number) || 0;
-                  const evPayload = ev.payload || {};
+                  let evPayload = {};
+                  const rawPayload = ev.payload;
+                  if (typeof rawPayload === 'string') {
+                    try {
+                      evPayload = JSON.parse(rawPayload);
+                    } catch (pErr) {
+                      evPayload = {};
+                    }
+                  } else if (rawPayload && typeof rawPayload === 'object') {
+                    evPayload = rawPayload;
+                  }
                   const evCreatedAt = ev.createdAt || ev.created_at || new Date().toISOString();
 
                   // 1. Immutable Event Store Insert with UNIQUE constraint
@@ -2091,12 +2101,21 @@ module.exports = async (req, res) => {
                         adj.created_at || adj.createdAt || evCreatedAt
                       ]);
                     } else if (evType === 'SHIFT_OPENED' || evType === 'SHIFT_CLOSED_Z_REPORT' || entityType === 'SHIFT') {
-                      const shift = evPayload.shift || evPayload;
-                      const openCash = Number(shift.opening_cash || shift.opening_balance_cents || 0);
-                      const expCash = Number(shift.expected_cash || 0);
-                      const actCash = Number(shift.actual_cash || 0);
-                      const diffCash = Number(shift.difference || 0);
-                      const totSales = Number(shift.total_cash_sales || shift.shift_sales_cents || 0);
+                      const shiftObj = (evPayload && typeof evPayload === 'object') ? (evPayload.shift || evPayload) : {};
+                      const shiftIdStr = String(shiftObj.shiftId || shiftObj.id || shiftObj.shift_id || (entityType === 'SHIFT' ? entityId : null) || evId);
+                      const shiftNum = Number(shiftObj.shiftNumber ?? shiftObj.shift_number ?? 1) || 1;
+                      const cashierIdVal = shiftObj.cashierId || shiftObj.cashier_id;
+                      const cashierIdStr = cashierIdVal ? String(cashierIdVal) : null;
+                      const cashierNameStr = String(shiftObj.cashierName || shiftObj.cashier_name || shiftObj.user_name || 'كاشير');
+                      const openCash = Number(shiftObj.openingCashCents ?? shiftObj.opening_cash ?? shiftObj.opening_balance_cents ?? shiftObj.openingCash ?? 0) || 0;
+                      const expCash = Number(shiftObj.expectedCashCents ?? shiftObj.expected_cash ?? shiftObj.expectedCash ?? 0) || 0;
+                      const actCash = Number(shiftObj.actualCashCents ?? shiftObj.actual_cash ?? shiftObj.actualCash ?? 0) || 0;
+                      const diffCash = Number(shiftObj.differenceCents ?? shiftObj.variance ?? shiftObj.difference ?? 0) || 0;
+                      const totSales = Number(shiftObj.totalSalesCents ?? shiftObj.shift_sales_cents ?? shiftObj.cashSales ?? shiftObj.total_cash_sales ?? 0) || 0;
+                      const isClosedEv = evType === 'SHIFT_CLOSED_Z_REPORT' || ['CLOSED', 'BALANCED', 'DEFICIT', 'SURPLUS'].includes(String(shiftObj.status || '').toUpperCase());
+                      const statusStr = isClosedEv ? 'CLOSED' : String(shiftObj.status || 'OPEN');
+                      const openedAtStr = shiftObj.openedAt || shiftObj.opened_at || evCreatedAt;
+                      const closedAtStr = shiftObj.closedAt || shiftObj.closed_at || (evType === 'SHIFT_CLOSED_Z_REPORT' ? new Date().toISOString() : null);
 
                       await client.query(`
                         INSERT INTO cloud_shifts (
@@ -2117,22 +2136,30 @@ module.exports = async (req, res) => {
                         effectiveStoreId,
                         token,
                         effectiveDeviceId,
-                        String(shift.id || evId),
-                        Number(shift.shift_number || 1),
-                        shift.cashier_id ? String(shift.cashier_id) : null,
-                        shift.cashier_name || 'كاشير',
+                        shiftIdStr,
+                        shiftNum,
+                        cashierIdStr,
+                        cashierNameStr,
                         openCash,
                         expCash,
                         actCash,
                         diffCash,
                         totSales,
                         0,
-                        shift.status || (evType === 'SHIFT_CLOSED_Z_REPORT' ? 'CLOSED' : 'OPEN'),
-                        shift.opened_at || evCreatedAt,
-                        shift.closed_at || (evType === 'SHIFT_CLOSED_Z_REPORT' ? new Date().toISOString() : null)
+                        statusStr,
+                        openedAtStr,
+                        closedAtStr
                       ]);
                     } else if (evType === 'CASH_MOVEMENT' || entityType === 'CASH_TRANSACTION') {
-                      const cashTx = evPayload.movement || evPayload;
+                      const cashTx = (evPayload && typeof evPayload === 'object') ? (evPayload.movement || evPayload) : {};
+                      const moveId = String(cashTx.id || cashTx.movementId || evId);
+                      const shiftIdRef = cashTx.shift_id || cashTx.shiftId ? String(cashTx.shift_id || cashTx.shiftId) : null;
+                      const moveType = String(cashTx.type || cashTx.movementType || 'DEPOSIT');
+                      const amountCents = Number(cashTx.amountCents ?? cashTx.amount ?? 0) || 0;
+                      const reasonStr = String(cashTx.reason || cashTx.description || '');
+                      const createdByStr = String(cashTx.created_by || cashTx.createdBy || cashTx.user_name || 'كاشير');
+                      const createdAtStr = cashTx.created_at || cashTx.createdAt || evCreatedAt;
+
                       await client.query(`
                         INSERT INTO cloud_cash_movements (
                           org_id, store_id, store_token, device_id, movement_id_local, shift_id_local, movement_type, amount_cents, reason, created_by, created_at
@@ -2143,13 +2170,13 @@ module.exports = async (req, res) => {
                         effectiveStoreId,
                         token,
                         effectiveDeviceId,
-                        String(cashTx.id || evId),
-                        cashTx.shift_id ? String(cashTx.shift_id) : null,
-                        cashTx.type || 'DEPOSIT',
-                        Number(cashTx.amount || 0),
-                        cashTx.reason || cashTx.description || '',
-                        cashTx.created_by || 'كاشير',
-                        cashTx.created_at || evCreatedAt
+                        moveId,
+                        shiftIdRef,
+                        moveType,
+                        amountCents,
+                        reasonStr,
+                        createdByStr,
+                        createdAtStr
                       ]);
                     }
                   } else {
