@@ -495,6 +495,18 @@ async function getPersistedSnapshot(token, requestedShiftId = null) {
         try { snap = JSON.parse(snap); } catch {}
       }
       if (snap && typeof snap === 'object' && snap.snapshot) {
+        const activeShift = snap.snapshot.current_shift || snap.snapshot.activeShift;
+        if (pool && activeShift && activeShift.shift_id_local && (activeShift.status === 'OPEN' || activeShift.status_code === 'OPEN')) {
+          try {
+            const orgId = authContext?.orgId;
+            const storeId = authContext?.storeId;
+            const shiftAgg = await fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, activeShift.shift_id_local);
+            activeShift.shift_sales_cents = shiftAgg.totalSalesCents;
+            activeShift.total_sales_cents = shiftAgg.totalSalesCents;
+          } catch (sErr) {
+            console.warn('[Redis Cached Shift Sales Aggregation Warning]:', sErr.message);
+          }
+        }
         return snap;
       }
     }
