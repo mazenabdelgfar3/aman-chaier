@@ -80,9 +80,9 @@
       
       <!-- 1. كروت الإحصائيات العلوية (شبكة 2x2) -->
       <div class="grid grid-cols-2 gap-3">
-        <!-- إجمالي المبيعات المحققة -->
+        <!-- مبيعات الوردية الحالية -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center shadow-sm">
-          <div class="text-xs text-slate-400 font-bold">إجمالي المبيعات المحققة</div>
+          <div class="text-xs text-slate-400 font-bold">مبيعات الوردية</div>
           <div class="text-xl font-black text-emerald-400 mt-1 font-mono" id="total-sales">0.00 <span class="text-xs font-sans">ج.م</span></div>
           <div class="text-[10px] text-slate-500 mt-1">متوسط الفاتورة: <span id="avg-ticket" class="font-mono font-bold">0.00</span> ج.م</div>
         </div>
@@ -370,38 +370,42 @@
       const summary = snap.salesSummary || {};
       const shift = snap.current_shift || snap.activeShift || {};
 
-      // تحويل القروش إلى جنيهات من حقول مبيعات اليوم الفعلية حصراً (دون السقوط على مبيعات الوردية)
-      let rawSalesCents = 0;
-      if (today.total_sales_cents !== undefined && today.total_sales_cents !== null) {
-        rawSalesCents = Number(today.total_sales_cents);
-      } else if (today.total_sales !== undefined && today.total_sales !== null) {
-        rawSalesCents = Number(today.total_sales) * 100;
-      } else if (summary.todayTotalCents !== undefined && summary.todayTotalCents !== null) {
-        rawSalesCents = Number(summary.todayTotalCents);
-      } else if (data.todayTotalCents !== undefined && data.todayTotalCents !== null) {
-        rawSalesCents = Number(data.todayTotalCents);
-      } else {
-        rawSalesCents = 0;
+      // ── الكارد الأول: مبيعات الوردية الحالية حصراً ──
+      // نقرأ shift_sales_cents → totalSalesCents → shift_sales (بالجنيه) → 0
+      let rawShiftSalesCents = 0;
+      if (shift.shift_sales_cents !== undefined && shift.shift_sales_cents !== null) {
+        rawShiftSalesCents = Number(shift.shift_sales_cents);
+      } else if (shift.shiftSalesCents !== undefined && shift.shiftSalesCents !== null) {
+        rawShiftSalesCents = Number(shift.shiftSalesCents);
+      } else if (shift.total_sales_cents !== undefined && shift.total_sales_cents !== null) {
+        rawShiftSalesCents = Number(shift.total_sales_cents);
+      } else if (shift.totalSalesCents !== undefined && shift.totalSalesCents !== null) {
+        rawShiftSalesCents = Number(shift.totalSalesCents);
+      } else if (shift.shift_sales !== undefined && shift.shift_sales !== null) {
+        rawShiftSalesCents = Number(shift.shift_sales) * 100;
       }
 
-      const totalSales = Number(rawSalesCents || 0) / 100;
+      const shiftSalesEGP = rawShiftSalesCents / 100;
 
-      // عدد الفواتير لليوم بأعلى أولوية
+      // ── عدد الفواتير: من الوردية أولاً ثم اليوم ──
       let rawInvoicesCount = 0;
-      if (today.invoices_count !== undefined && today.invoices_count !== null) {
+      if (shift.invoices_count !== undefined && shift.invoices_count !== null) {
+        rawInvoicesCount = Number(shift.invoices_count);
+      } else if (today.invoices_count !== undefined && today.invoices_count !== null) {
         rawInvoicesCount = Number(today.invoices_count);
       } else if (summary.todayInvoiceCount !== undefined && summary.todayInvoiceCount !== null) {
         rawInvoicesCount = Number(summary.todayInvoiceCount);
       } else if (data.invoicesCount !== undefined && data.invoicesCount !== null) {
         rawInvoicesCount = Number(data.invoicesCount);
-      } else {
-        rawInvoicesCount = 0;
       }
 
       const invoiceCount = Number(rawInvoicesCount || 0);
 
-      const avgTicket = invoiceCount > 0 ? (totalSales / invoiceCount) : (Number(today.average_ticket || (summary.averageInvoiceCents ? summary.averageInvoiceCents / 100 : 0) || 0));
+      const avgTicket = invoiceCount > 0
+        ? (shiftSalesEGP / invoiceCount)
+        : (Number(today.average_ticket || (summary.averageInvoiceCents ? summary.averageInvoiceCents / 100 : 0) || 0));
 
+      // ── الربح: من اليوم ── (الوردية لا تحمل بيانات ربح مباشرة)
       let rawNetProfitCents = 0;
       if (today.net_profit_cents !== undefined && today.net_profit_cents !== null) {
         rawNetProfitCents = Number(today.net_profit_cents);
@@ -409,16 +413,21 @@
         rawNetProfitCents = Number(summary.netProfitCents);
       } else if (today.net_profit !== undefined && today.net_profit !== null) {
         rawNetProfitCents = Number(today.net_profit) * 100;
-      } else {
-        rawNetProfitCents = 0;
       }
 
-      const netProfit = Number(rawNetProfitCents || 0) / 100;
-      const profitMargin = totalSales > 0 ? ((netProfit / totalSales) * 100) : (today.profit_margin || summary.profitMarginPct || 0);
+      const netProfit = rawNetProfitCents / 100;
+
+      // ── هامش الربح: يُحسب محلياً من مبيعات الوردية فقط ──
+      // لا نسقط أبداً على today.profit_margin من السيرفر لأنه قد يكون خاطئاً (8018%)
+      // عندما تكون مبيعات الوردية = 0 نعرض 0%
+      const profitMargin = shiftSalesEGP > 0
+        ? ((netProfit / shiftSalesEGP) * 100)
+        : 0;
 
       // تحديث عناصر الـ DOM
       const elTotalSales = document.getElementById('total-sales') || document.getElementById('today-sales');
-      if (elTotalSales) elTotalSales.innerHTML = `${formatMoney(totalSales)} <span class="text-xs font-sans">ج.م</span>`;
+      if (elTotalSales) elTotalSales.innerHTML = `${formatMoney(shiftSalesEGP)} <span class="text-xs font-sans">ج.م</span>`;
+
 
       const elInvoicesCount = document.getElementById('invoices-count');
       if (elInvoicesCount) elInvoicesCount.textContent = invoiceCount;
