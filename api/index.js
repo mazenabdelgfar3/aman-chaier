@@ -142,10 +142,12 @@ async function setDeviceSequence(token, deviceId, seq) {
 
 // Unified Single-Source-of-Truth Aggregator for Store Today Sales, Payment Methods & Profit
 async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId, targetDate = null) {
-  let whereClause = 'store_token = $1';
+  let invWhere = 'store_token = $1';
+  let itemWhere = 'cii.store_token = $1';
   const queryParams = [token];
   if (orgId && storeId) {
-    whereClause = 'store_token = $1 AND org_id = $2 AND store_id = $3';
+    invWhere = 'store_token = $1 AND org_id = $2 AND store_id = $3';
+    itemWhere = 'cii.store_token = $1 AND cii.org_id = $2 AND cii.store_id = $3';
     queryParams.push(orgId, storeId);
   }
 
@@ -165,7 +167,7 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId, targ
         discount_cents,
         payment_method
       FROM cloud_invoices 
-      WHERE ${whereClause} AND ${dateFilter} AND status = 'COMPLETED'
+      WHERE ${invWhere} AND ${dateFilter} AND status = 'COMPLETED'
     ),
     invoice_item_profits AS (
       SELECT 
@@ -177,7 +179,7 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId, targ
           COALESCE(NULLIF(cii.unit_cost_cents, 0), CAST(cii.unit_price_cents * 0.70 AS BIGINT)) * cii.quantity
         ), 0)::bigint as invoice_cogs_cents
       FROM cloud_invoice_items cii
-      WHERE ${whereClause.replace(/store_token/g, 'cii.store_token').replace(/org_id/g, 'cii.org_id').replace(/store_id/g, 'cii.store_id')}
+      WHERE ${itemWhere}
         AND cii.invoice_id_local IN (SELECT invoice_id_local FROM today_invoices)
       GROUP BY cii.invoice_id_local
     ),
@@ -199,7 +201,7 @@ async function fetchStoreTodaySalesAggregation(pool, token, orgId, storeId, targ
       SELECT
         COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
       FROM cloud_cash_movements
-      WHERE ${whereClause} AND ${dateFilter} AND movement_type = 'RETURN'
+      WHERE ${invWhere} AND ${dateFilter} AND movement_type = 'RETURN'
     )
     SELECT 
       s.invoices_count,
@@ -253,11 +255,13 @@ async function fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, shif
     return fetchStoreTodaySalesAggregation(pool, token, orgId, storeId);
   }
 
-  let whereClause = 'store_token = $1 AND shift_id_local = $2';
-  const queryParams = [token, shiftIdLocal];
+  let invWhere = 'store_token = $1 AND shift_id_local = $2';
+  let itemWhere = 'cii.store_token = $1';
+  let queryParams = [token, shiftIdLocal];
   if (orgId && storeId) {
-    whereClause = 'store_token = $1 AND org_id = $2 AND store_id = $3 AND shift_id_local = $4';
-    queryParams.push(orgId, storeId, shiftIdLocal);
+    invWhere = 'store_token = $1 AND org_id = $2 AND store_id = $3 AND shift_id_local = $4';
+    itemWhere = 'cii.store_token = $1 AND cii.org_id = $2 AND cii.store_id = $3';
+    queryParams = [token, orgId, storeId, shiftIdLocal];
   }
 
   const salesRes = await pool.query(`
@@ -269,7 +273,7 @@ async function fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, shif
         discount_cents,
         payment_method
       FROM cloud_invoices 
-      WHERE ${whereClause} AND status = 'COMPLETED'
+      WHERE ${invWhere} AND status = 'COMPLETED'
     ),
     invoice_item_profits AS (
       SELECT 
@@ -281,7 +285,7 @@ async function fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, shif
           COALESCE(NULLIF(cii.unit_cost_cents, 0), CAST(cii.unit_price_cents * 0.70 AS BIGINT)) * cii.quantity
         ), 0)::bigint as invoice_cogs_cents
       FROM cloud_invoice_items cii
-      WHERE ${whereClause.replace(/shift_id_local = \$[24]/g, '1=1').replace(/store_token/g, 'cii.store_token').replace(/org_id/g, 'cii.org_id').replace(/store_id/g, 'cii.store_id')}
+      WHERE ${itemWhere}
         AND cii.invoice_id_local IN (SELECT invoice_id_local FROM shift_invoices)
       GROUP BY cii.invoice_id_local
     ),
@@ -303,7 +307,7 @@ async function fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, shif
       SELECT
         COALESCE(SUM(amount_cents), 0)::bigint as total_return_cents
       FROM cloud_cash_movements
-      WHERE ${whereClause} AND movement_type = 'RETURN'
+      WHERE ${invWhere} AND movement_type = 'RETURN'
     )
     SELECT 
       s.invoices_count,
@@ -645,6 +649,154 @@ async function getPersistedSnapshot(token, requestedShiftId = null) {
   return cloudSnapshots.get(token) || null;
 }
 
+
+function projectEventIntoInMemorySnapshot(targetSnapshot, ev) {
+  if (!targetSnapshot || typeof targetSnapshot !== 'object') return;
+  const evType = ev.eventType || ev.type || '';
+  const entityType = ev.entityType || '';
+  const evPayload = ev.payload || ev;
+  const isReturnEvent = evType === 'CUSTOMER_RETURN' || evType === 'RETURN_PROCESSED' || entityType === 'RETURN';
+  const isInvoiceEvent = (evType === 'INVOICE_CREATED' || evType === 'SALE_COMPLETED' || entityType === 'INVOICE') && !isReturnEvent;
+
+  if (!targetSnapshot.today) {
+    targetSnapshot.today = {
+      total_sales_cents: 0,
+      total_sales: 0,
+      invoices_count: 0,
+      cogsCents: 0,
+      total_cogs_cents: 0,
+      discount_cents: 0,
+      net_profit_cents: 0,
+      net_profit: 0,
+      profit_margin: 0,
+      payment_methods_cents: { cashCents: 0, cardCents: 0, instapayCents: 0, creditCents: 0 },
+      payment_methods: { cash: 0, card: 0, instapay: 0, credit: 0 }
+    };
+  }
+  if (!Array.isArray(targetSnapshot.recentInvoices)) {
+    targetSnapshot.recentInvoices = [];
+  }
+
+  if (isInvoiceEvent) {
+    const inv = evPayload.invoice || evPayload;
+    const invId = String(inv.id || inv.invoiceId || ev.entityId || ev.eventId);
+    const invNum = String(inv.invoice_number || inv.invoiceNumber || invId);
+    const subtotalCents = Number(inv.subtotal_cents !== undefined ? inv.subtotal_cents : (inv.total_amount !== undefined ? (inv.total_amount > 1000 ? inv.total_amount : Math.round(inv.total_amount * 100)) : (inv.subtotal !== undefined ? (inv.subtotal > 1000 ? inv.subtotal : Math.round(inv.subtotal * 100)) : 0))) || 0;
+    const discountCents = Number(inv.discount_cents !== undefined ? inv.discount_cents : (inv.discount_amount !== undefined ? (inv.discount_amount > 1000 ? inv.discount_amount : Math.round(inv.discount_amount * 100)) : (inv.discount !== undefined ? (inv.discount > 1000 ? inv.discount : Math.round(inv.discount * 100)) : 0))) || 0;
+    const finalCents = Number(inv.final_amount_cents !== undefined ? inv.final_amount_cents : (inv.final_amount !== undefined ? (inv.final_amount > 1000 ? inv.final_amount : Math.round(inv.final_amount * 100)) : (inv.finalTotal !== undefined ? (inv.finalTotal > 1000 ? inv.finalTotal : Math.round(inv.finalTotal * 100)) : (subtotalCents - discountCents)))) || 0;
+    const pMethodRaw = String(inv.payment_method || inv.paymentMethod || 'CASH').trim().toUpperCase();
+    const pMethod = pMethodRaw === 'CASH' ? 'CASH' : (pMethodRaw === 'CARD' ? 'CARD' : (['INSTAPAY', 'VODAFONE_CASH', 'WALLET'].includes(pMethodRaw) ? 'INSTAPAY' : (pMethodRaw === 'CREDIT' ? 'CREDIT' : pMethodRaw)));
+
+    let invoiceCogs = 0;
+    let grossItemProfit = 0;
+    const items = Array.isArray(inv.items) ? inv.items : (Array.isArray(evPayload.items) ? evPayload.items : []);
+    for (const item of items) {
+      let unitCost = 0;
+      if (item.unit_cost_cents !== undefined && item.unit_cost_cents !== null) {
+        unitCost = Math.round(Number(item.unit_cost_cents) || 0);
+      } else if (item.cost_price_cents !== undefined && item.cost_price_cents !== null) {
+        unitCost = Math.round(Number(item.cost_price_cents) || 0);
+      } else {
+        const rawCost = item.unit_cost_price ?? item.cost_price ?? item.costPrice ?? item.unit_cost ?? item.cost ?? item.buy_price ?? item.buyPrice ?? item.unitCost;
+        if (rawCost !== undefined && rawCost !== null) {
+          unitCost = Math.round((Number(rawCost) || 0) * 100);
+        }
+      }
+
+      let unitPrice = 0;
+      if (item.unit_price_cents !== undefined && item.unit_price_cents !== null) {
+        unitPrice = Math.round(Number(item.unit_price_cents) || 0);
+      } else if (item.selling_price_cents !== undefined && item.selling_price_cents !== null) {
+        unitPrice = Math.round(Number(item.selling_price_cents) || 0);
+      } else {
+        const rawPrice = item.unit_selling_price ?? item.selling_price ?? item.unitPrice ?? item.price;
+        if (rawPrice !== undefined && rawPrice !== null) {
+          unitPrice = Math.round((Number(rawPrice) || 0) * 100);
+        }
+      }
+
+      const qty = Number(item.quantity || 1);
+      const effectiveCost = unitCost !== 0 ? unitCost : Math.round(unitPrice * 0.70);
+      invoiceCogs += effectiveCost * qty;
+      grossItemProfit += (unitPrice - effectiveCost) * qty;
+    }
+
+    targetSnapshot.today.total_sales_cents += finalCents;
+    targetSnapshot.today.total_sales = targetSnapshot.today.total_sales_cents / 100;
+    targetSnapshot.today.invoices_count += 1;
+    targetSnapshot.today.total_cogs_cents = (targetSnapshot.today.total_cogs_cents || 0) + invoiceCogs;
+    targetSnapshot.today.cogsCents = targetSnapshot.today.total_cogs_cents;
+    targetSnapshot.today.discount_cents = (targetSnapshot.today.discount_cents || 0) + discountCents;
+
+    if (targetSnapshot.today._gross_profit_cents === undefined) {
+      targetSnapshot.today._gross_profit_cents = 0;
+    }
+    targetSnapshot.today._gross_profit_cents += grossItemProfit;
+
+    const netProfitCents = Math.max(0, targetSnapshot.today._gross_profit_cents - targetSnapshot.today.discount_cents);
+    targetSnapshot.today.net_profit_cents = netProfitCents;
+    targetSnapshot.today.net_profit = netProfitCents / 100;
+    targetSnapshot.today.profit_margin = targetSnapshot.today.total_sales_cents > 0 ? Math.round((netProfitCents / targetSnapshot.today.total_sales_cents) * 1000) / 10 : 0;
+
+    const pm = targetSnapshot.today.payment_methods_cents;
+    if (pMethod === 'CASH') pm.cashCents += finalCents;
+    else if (pMethod === 'CARD') pm.cardCents += finalCents;
+    else if (pMethod === 'INSTAPAY') pm.instapayCents += finalCents;
+    else if (pMethod === 'CREDIT') pm.creditCents += finalCents;
+    else pm.cashCents += finalCents;
+
+    targetSnapshot.today.payment_methods = {
+      cash: pm.cashCents / 100,
+      card: pm.cardCents / 100,
+      instapay: pm.instapayCents / 100,
+      credit: pm.creditCents / 100
+    };
+
+    const shiftId = String(inv.shift_id || inv.shiftId || inv.shift_id_local || '');
+    if (targetSnapshot.current_shift) {
+      const activeShiftId = String(targetSnapshot.current_shift.shift_id_local || targetSnapshot.current_shift.id || targetSnapshot.current_shift.shift_id || '');
+      if (!activeShiftId || activeShiftId === shiftId) {
+        targetSnapshot.current_shift.shift_sales_cents = (targetSnapshot.current_shift.shift_sales_cents || 0) + finalCents;
+        targetSnapshot.current_shift.total_sales_cents = targetSnapshot.current_shift.shift_sales_cents;
+      }
+    }
+
+    targetSnapshot.recentInvoices.unshift({
+      id: invId,
+      invoice_number: invNum,
+      cashier_name: inv.cashier_name || inv.cashierName || 'كاشير',
+      customer_name: inv.customer_name || inv.customerName || 'عميل نقدي',
+      payment_method: pMethod,
+      final_amount_cents: finalCents,
+      created_at: inv.created_at || inv.createdAt || new Date().toISOString()
+    });
+    if (targetSnapshot.recentInvoices.length > 10) {
+      targetSnapshot.recentInvoices = targetSnapshot.recentInvoices.slice(0, 10);
+    }
+  } else if (evType === 'SHIFT_OPENED' || entityType === 'SHIFT') {
+    const shiftObj = (evPayload && typeof evPayload === 'object') ? (evPayload.shift || evPayload) : {};
+    const shiftIdStr = String(shiftObj.shiftId || shiftObj.id || shiftObj.shift_id_local || shiftObj.shift_id || ev.entityId || ev.eventId);
+    const isClosed = evType === 'SHIFT_CLOSED_Z_REPORT' || ['CLOSED', 'BALANCED', 'DEFICIT', 'SURPLUS'].includes(String(shiftObj.status || '').toUpperCase());
+
+    if (isClosed) {
+      targetSnapshot.current_shift = {
+        shift_id_local: shiftIdStr,
+        status: 'CLOSED',
+        closed_at: shiftObj.closedAt || shiftObj.closed_at || new Date().toISOString()
+      };
+    } else {
+      targetSnapshot.current_shift = {
+        shift_id_local: shiftIdStr,
+        id: shiftIdStr,
+        shift_id: shiftIdStr,
+        status: 'OPEN',
+        opened_at: shiftObj.openedAt || shiftObj.opened_at || new Date().toISOString(),
+        shift_sales_cents: 0,
+        total_sales_cents: 0
+      };
+    }
+  }
+}
 
 async function saveDeviceSnapshotAndAggregate(token, deviceId, deviceRecord) {
   const currentDevId = deviceId || 'POS-01';
@@ -2285,8 +2437,17 @@ module.exports = async (req, res) => {
           // ═══════════════════════════════════════════════════════════════════
           // TIER 2: REDIS / IN-MEMORY FALLBACK (Dev/Preview Environment Only)
           // ═══════════════════════════════════════════════════════════════════
+          const currentDevId = deviceId || 'POS-01';
+          const devKey = `dev:${token}:${currentDevId}`;
+          const existingDevRec = deviceSnapshots.get(devKey);
+          const effectiveSnapshot = (snapshot && Object.keys(snapshot).length > 0)
+            ? { ...snapshot }
+            : { ...(existingDevRec?.snapshot || {}) };
+
           const processedEventIds = [];
           const rejectedEventIds = [];
+
+          const hasCallerSnapshot = snapshot && Object.keys(snapshot).length > 0;
 
           for (const ev of incomingEvents) {
             const evId = ev.eventId || ev.id;
@@ -2301,6 +2462,9 @@ module.exports = async (req, res) => {
             try {
               await markIdempotencyProcessed(token, deviceId, evId);
               processedEventIds.push(evId);
+              if (!hasCallerSnapshot) {
+                projectEventIntoInMemorySnapshot(effectiveSnapshot, ev);
+              }
             } catch (err) {
               rejectedEventIds.push(evId);
             }
@@ -2333,7 +2497,7 @@ module.exports = async (req, res) => {
             storeName,
             idempotencyKey,
             sequenceNumber,
-            snapshot: snapshot || {},
+            snapshot: effectiveSnapshot,
             lastSync: new Date().toISOString(),
             lastIp: ip,
           };
