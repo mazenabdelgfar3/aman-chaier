@@ -528,6 +528,7 @@ async function getPersistedSnapshot(token, requestedShiftId = null) {
         try {
           const shiftAgg = await fetchStoreShiftSalesAggregation(pool, token, orgId, storeId, activeShift.shift_id_local);
           activeShift.shift_sales_cents = shiftAgg.totalSalesCents;
+          activeShift.total_sales_cents = shiftAgg.totalSalesCents;
         } catch (sErr) {
           console.warn('[Shift Sales Aggregation Warning]:', sErr.message);
         }
@@ -707,6 +708,7 @@ async function saveDeviceSnapshotAndAggregate(token, deviceId, deviceRecord) {
           try {
             const shiftAgg = await fetchStoreShiftSalesAggregation(pool, token, activeShift.org_id, activeShift.store_id, activeShift.shift_id_local);
             activeShift.shift_sales_cents = shiftAgg.totalSalesCents;
+            activeShift.total_sales_cents = shiftAgg.totalSalesCents;
           } catch (sErr) {
             console.warn('[Shift Sales Aggregation Warning]:', sErr.message);
           }

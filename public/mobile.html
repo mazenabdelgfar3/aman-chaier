@@ -455,9 +455,11 @@
       );
 
       const shiftSales = hasActiveShift
-        ? (shift.shift_sales_cents !== undefined ? (shift.shift_sales_cents / 100) :
-           (shift.shiftSalesCents !== undefined ? (shift.shiftSalesCents / 100) :
-            (shift.shift_sales !== undefined ? Number(shift.shift_sales) : 0)))
+        ? (shift.shift_sales_cents !== undefined ? (Number(shift.shift_sales_cents) / 100) :
+           (shift.shiftSalesCents !== undefined ? (Number(shift.shiftSalesCents) / 100) :
+            (shift.total_sales_cents !== undefined ? (Number(shift.total_sales_cents) / 100) :
+             (shift.totalSalesCents !== undefined ? (Number(shift.totalSalesCents) / 100) :
+              (shift.shift_sales !== undefined ? Number(shift.shift_sales) : 0)))))
         : 0;
 
       const openBal = hasActiveShift
